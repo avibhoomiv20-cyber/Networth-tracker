@@ -9,11 +9,19 @@ import {
   getSupabaseClient,
   isSupabaseConfigured,
 } from "@/lib/supabase/client";
-import type { WorkspaceSummary } from "@/lib/types";
+import type {
+  CloudAccount,
+  CloudEntry,
+  CloudMonthlyNote,
+  CloudSnapshot,
+  TrackerData,
+  WorkspaceSummary,
+} from "@/lib/types";
 
 export default function Home() {
   const [session, setSession] = useState<Session | null>(null);
   const [workspace, setWorkspace] = useState<WorkspaceSummary | null>(null);
+  const [trackerData, setTrackerData] = useState<TrackerData | null>(null);
   const [loading, setLoading] = useState(isSupabaseConfigured);
   const [setupError, setSetupError] = useState("");
 
@@ -31,6 +39,7 @@ export default function Home() {
 
       setSession(nextSession);
       setWorkspace(null);
+      setTrackerData(null);
       setSetupError("");
 
       if (!nextSession) {
@@ -54,7 +63,13 @@ export default function Home() {
         return;
       }
 
-      const [{ data: workspaceRow, error: detailsError }, accountResult] =
+      const [
+        { data: workspaceRow, error: detailsError },
+        accountResult,
+        snapshotResult,
+        entryResult,
+        noteResult,
+      ] =
         await Promise.all([
           supabase
             .from("nw_workspaces")
@@ -63,22 +78,59 @@ export default function Home() {
             .single(),
           supabase
             .from("nw_accounts")
-            .select("id", { count: "exact", head: true })
+            .select(
+              "id, name, class_raw, notes, ticker_symbol, broker_name, sort_order",
+              { count: "exact" },
+            )
             .eq("workspace_id", workspaceId)
-            .eq("is_archived", false),
+            .eq("is_archived", false)
+            .order("sort_order"),
+          supabase
+            .from("nw_account_snapshots")
+            .select(
+              "id, account_id, captured_on, value_paise, quantity, unit_price_paise, usd_to_inr, source, note",
+            )
+            .eq("workspace_id", workspaceId)
+            .order("captured_on"),
+          supabase
+            .from("nw_account_entries")
+            .select(
+              "id, account_id, entry_date, description, comment, direction, amount_paise, quantity, unit_price_paise, usd_to_inr",
+            )
+            .eq("workspace_id", workspaceId)
+            .order("entry_date"),
+          supabase
+            .from("nw_monthly_notes")
+            .select("month_start, note")
+            .eq("workspace_id", workspaceId)
+            .order("month_start"),
         ]);
 
       if (!active) return;
 
-      if (detailsError || !workspaceRow) {
+      const dataError =
+        accountResult.error ??
+        snapshotResult.error ??
+        entryResult.error ??
+        noteResult.error;
+
+      if (detailsError || !workspaceRow || dataError) {
         setSetupError(
-          detailsError?.message ?? "Your workspace details could not be loaded.",
+          detailsError?.message ??
+            dataError?.message ??
+            "Your workspace details could not be loaded.",
         );
       } else {
         setWorkspace({
           id: workspaceRow.id,
           name: workspaceRow.name,
           accountCount: accountResult.count ?? 0,
+        });
+        setTrackerData({
+          accounts: (accountResult.data ?? []) as CloudAccount[],
+          snapshots: (snapshotResult.data ?? []) as CloudSnapshot[],
+          entries: (entryResult.data ?? []) as CloudEntry[],
+          notes: (noteResult.data ?? []) as CloudMonthlyNote[],
         });
       }
 
@@ -135,6 +187,7 @@ export default function Home() {
     <AppShell
       session={session}
       workspace={workspace}
+      trackerData={trackerData}
       setupError={setupError}
     />
   );

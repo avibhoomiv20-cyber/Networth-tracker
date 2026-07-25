@@ -14,13 +14,19 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import { GettingStarted } from "@/components/onboarding/GettingStarted";
+import { TrackerViews } from "@/components/tracker/TrackerViews";
 import { BrandMark } from "@/components/ui/BrandMark";
 import { getSupabaseClient } from "@/lib/supabase/client";
-import type { AppSection, WorkspaceSummary } from "@/lib/types";
+import type {
+  AppSection,
+  TrackerData,
+  WorkspaceSummary,
+} from "@/lib/types";
 
 type AppShellProps = {
   session: Session;
   workspace: WorkspaceSummary | null;
+  trackerData: TrackerData | null;
   setupError: string;
 };
 
@@ -64,7 +70,12 @@ const sectionCopy: Record<AppSection, { title: string; description: string }> = 
   },
 };
 
-export function AppShell({ session, workspace, setupError }: AppShellProps) {
+export function AppShell({
+  session,
+  workspace,
+  trackerData,
+  setupError,
+}: AppShellProps) {
   const [activeSection, setActiveSection] = useState<AppSection>("summary");
   const email = session.user.email ?? "Signed-in user";
   const initials = email.slice(0, 2).toUpperCase();
@@ -143,6 +154,8 @@ export function AppShell({ session, workspace, setupError }: AppShellProps) {
 
         {activeSection === "summary" && isNewWorkspace ? (
           <GettingStarted />
+        ) : trackerData ? (
+          <TrackerViews section={activeSection} data={trackerData} />
         ) : (
           <section className="empty-view">
             <div>
@@ -157,7 +170,7 @@ export function AppShell({ session, workspace, setupError }: AppShellProps) {
               <p>
                 {isNewWorkspace
                   ? "Add your first account in the next setup step. Nothing is pre-filled, so this workspace stays entirely yours."
-                  : "Your workspace is connected. Account editing and synced tracker views are the next implementation step."}
+                  : "Your synced data could not be loaded. Refresh the page or review the message above."}
               </p>
             </div>
           </section>
