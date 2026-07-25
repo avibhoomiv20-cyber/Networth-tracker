@@ -4,13 +4,14 @@ import { useMemo } from "react";
 import {
   ArrowDownRight,
   ArrowUpRight,
-  BookOpenText,
-  Landmark,
   TrendingUp,
 } from "lucide-react";
 import { CloudDataManager } from "@/components/tracker/CloudDataManager";
 import {
-  accountsByClass,
+  DirectAccountBookEntry,
+  DirectHoldingsEntry,
+} from "@/components/tracker/DirectEntryViews";
+import {
   buildMonthlyRows,
   classLabels,
   classOrder,
@@ -54,9 +55,21 @@ export function TrackerViews({
     case "summary":
       return <SummaryView rows={rows} />;
     case "holdings":
-      return <HoldingsView data={data} rows={rows} />;
+      return (
+        <DirectHoldingsEntry
+          workspaceId={workspaceId}
+          data={data}
+          onDataChange={onDataChange}
+        />
+      );
     case "account-book":
-      return <AccountBookView data={data} />;
+      return (
+        <DirectAccountBookEntry
+          workspaceId={workspaceId}
+          data={data}
+          onDataChange={onDataChange}
+        />
+      );
     case "ledger":
       return <LedgerView rows={rows} />;
     case "history":
@@ -174,127 +187,6 @@ function Metric({
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
-  );
-}
-
-function HoldingsView({
-  data,
-  rows,
-}: {
-  data: TrackerData;
-  rows: ReturnType<typeof buildMonthlyRows>;
-}) {
-  const latest = rows.at(-1);
-  const groups = accountsByClass(data.accounts);
-
-  return (
-    <div className="tracker-stack">
-      {groups.map(({ assetClass, accounts }) => (
-        <section className="section-card holding-group" key={assetClass}>
-          <div className="card-heading">
-            <div>
-              <p className="eyebrow">{accounts.length} accounts</p>
-              <h3>{classLabels[assetClass]}</h3>
-            </div>
-            <strong>{formatINR(latest?.byClass[assetClass] ?? 0)}</strong>
-          </div>
-          <div className="holding-list">
-            {accounts.map((account) => (
-              <article key={account.id}>
-                <div className="account-symbol">
-                  <Landmark size={17} />
-                </div>
-                <div>
-                  <strong>{account.name}</strong>
-                  <span>
-                    {[account.broker_name, account.ticker_symbol]
-                      .filter(Boolean)
-                      .join(" · ") || classLabels[account.class_raw]}
-                  </span>
-                </div>
-                <strong>{formatINR(latest?.byAccount[account.id] ?? 0)}</strong>
-              </article>
-            ))}
-          </div>
-        </section>
-      ))}
-    </div>
-  );
-}
-
-function AccountBookView({ data }: { data: TrackerData }) {
-  const accountNames = new Map(
-    data.accounts.map((account) => [account.id, account.name]),
-  );
-  const entries = [...data.entries].sort((a, b) =>
-    b.entry_date.localeCompare(a.entry_date),
-  );
-
-  if (entries.length === 0) {
-    return (
-      <InfoEmptyState
-        icon={<BookOpenText size={22} />}
-        title="No Account Book entries yet"
-        copy="Entries added on your Mac will appear here after the next cloud sync."
-      />
-    );
-  }
-
-  return (
-    <section className="section-card">
-      <div className="card-heading">
-        <div>
-          <p className="eyebrow">Synced activity</p>
-          <h3>{entries.length} Account Book entries</h3>
-        </div>
-      </div>
-      <div className="responsive-table">
-        <table className="activity-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Account</th>
-              <th>Description</th>
-              <th>Comment</th>
-              <th>Movement</th>
-              <th>Amount / units</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((entry) => {
-              const account = data.accounts.find(
-                (item) => item.id === entry.account_id,
-              );
-              const isUnits = account?.class_raw === "companyStock";
-              return (
-                <tr key={entry.id}>
-                  <td>{formatDate(entry.entry_date)}</td>
-                  <td><strong>{accountNames.get(entry.account_id) ?? "Account"}</strong></td>
-                  <td>{entry.description}</td>
-                  <td className="muted-cell">{entry.comment || "—"}</td>
-                  <td>
-                    <span
-                      className={
-                        entry.direction === "increase"
-                          ? "entry-direction in"
-                          : "entry-direction out"
-                      }
-                    >
-                      {entry.direction === "increase" ? "In" : "Out"}
-                    </span>
-                  </td>
-                  <td className="amount-cell">
-                    {isUnits && entry.quantity > 0
-                      ? `${Number(entry.quantity).toLocaleString("en-IN")} units`
-                      : formatINR(entry.amount_paise)}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </section>
   );
 }
 

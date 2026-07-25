@@ -40,7 +40,7 @@ const sections: Array<{
   { id: "account-book", label: "Account Book", icon: BookOpenText },
   { id: "ledger", label: "Ledger", icon: NotebookTabs },
   { id: "history", label: "History", icon: Clock3 },
-  { id: "setup", label: "Manage Data", icon: Settings2 },
+  { id: "setup", label: "Account Setup", icon: Settings2 },
 ];
 
 const sectionCopy: Record<AppSection, { title: string; description: string }> = {
@@ -65,8 +65,8 @@ const sectionCopy: Record<AppSection, { title: string; description: string }> = 
     description: "Follow the changes behind your net-worth trend.",
   },
   setup: {
-    title: "Setup",
-    description: "Add, edit and safely remove cloud-synced tracker data.",
+    title: "Account Setup",
+    description: "Create and organise the accounts used by your tracker.",
   },
 };
 
@@ -147,15 +147,6 @@ export function AppShell({
             <p>{copy.description}</p>
           </div>
           <div className="header-actions">
-            {activeSection !== "setup" && !isNewWorkspace && (
-              <button
-                className="secondary-button"
-                onClick={() => setActiveSection("setup")}
-                type="button"
-              >
-                <Settings2 size={15} /> Edit data
-              </button>
-            )}
             <span className="status-pill">
               <span className="status-dot" /> Synced workspace
             </span>
