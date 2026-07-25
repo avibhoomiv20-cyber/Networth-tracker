@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
   BookOpenText,
@@ -40,7 +40,7 @@ const sections: Array<{
   { id: "account-book", label: "Account Book", icon: BookOpenText },
   { id: "ledger", label: "Ledger", icon: NotebookTabs },
   { id: "history", label: "History", icon: Clock3 },
-  { id: "setup", label: "Setup", icon: Settings2 },
+  { id: "setup", label: "Manage Data", icon: Settings2 },
 ];
 
 const sectionCopy: Record<AppSection, { title: string; description: string }> = {
@@ -66,7 +66,7 @@ const sectionCopy: Record<AppSection, { title: string; description: string }> = 
   },
   setup: {
     title: "Setup",
-    description: "Create and organise the accounts you want to track.",
+    description: "Add, edit and safely remove cloud-synced tracker data.",
   },
 };
 
@@ -77,10 +77,16 @@ export function AppShell({
   setupError,
 }: AppShellProps) {
   const [activeSection, setActiveSection] = useState<AppSection>("summary");
+  const [currentData, setCurrentData] = useState(trackerData);
   const email = session.user.email ?? "Signed-in user";
   const initials = email.slice(0, 2).toUpperCase();
   const copy = sectionCopy[activeSection];
-  const isNewWorkspace = (workspace?.accountCount ?? 0) === 0;
+  const isNewWorkspace =
+    (currentData?.accounts.length ?? workspace?.accountCount ?? 0) === 0;
+
+  useEffect(() => {
+    setCurrentData(trackerData);
+  }, [trackerData]);
 
   const signOut = async () => {
     await getSupabaseClient()?.auth.signOut();
@@ -140,9 +146,20 @@ export function AppShell({
             <h1>{copy.title}</h1>
             <p>{copy.description}</p>
           </div>
-          <span className="status-pill">
-            <span className="status-dot" /> Synced workspace
-          </span>
+          <div className="header-actions">
+            {activeSection !== "setup" && !isNewWorkspace && (
+              <button
+                className="secondary-button"
+                onClick={() => setActiveSection("setup")}
+                type="button"
+              >
+                <Settings2 size={15} /> Edit data
+              </button>
+            )}
+            <span className="status-pill">
+              <span className="status-dot" /> Synced workspace
+            </span>
+          </div>
         </header>
 
         {setupError && (
@@ -154,8 +171,13 @@ export function AppShell({
 
         {activeSection === "summary" && isNewWorkspace ? (
           <GettingStarted />
-        ) : trackerData ? (
-          <TrackerViews section={activeSection} data={trackerData} />
+        ) : currentData && workspace ? (
+          <TrackerViews
+            section={activeSection}
+            workspaceId={workspace.id}
+            data={currentData}
+            onDataChange={setCurrentData}
+          />
         ) : (
           <section className="empty-view">
             <div>

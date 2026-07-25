@@ -5,11 +5,10 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   BookOpenText,
-  CheckCircle2,
   Landmark,
   TrendingUp,
-  WalletCards,
 } from "lucide-react";
+import { CloudDataManager } from "@/components/tracker/CloudDataManager";
 import {
   accountsByClass,
   buildMonthlyRows,
@@ -21,13 +20,14 @@ import {
 import type {
   AppSection,
   AssetClass,
-  CloudAccount,
   TrackerData,
 } from "@/lib/types";
 
 type TrackerViewsProps = {
   section: AppSection;
+  workspaceId: string;
   data: TrackerData;
+  onDataChange: (data: TrackerData) => void;
 };
 
 const cardClasses: AssetClass[] = [
@@ -42,7 +42,12 @@ const cardClasses: AssetClass[] = [
   "liability",
 ];
 
-export function TrackerViews({ section, data }: TrackerViewsProps) {
+export function TrackerViews({
+  section,
+  workspaceId,
+  data,
+  onDataChange,
+}: TrackerViewsProps) {
   const rows = useMemo(() => buildMonthlyRows(data), [data]);
 
   switch (section) {
@@ -57,7 +62,13 @@ export function TrackerViews({ section, data }: TrackerViewsProps) {
     case "history":
       return <HistoryView data={data} />;
     case "setup":
-      return <SetupView accounts={data.accounts} />;
+      return (
+        <CloudDataManager
+          workspaceId={workspaceId}
+          data={data}
+          onDataChange={onDataChange}
+        />
+      );
   }
 }
 
@@ -389,42 +400,6 @@ function HistoryView({ data }: { data: TrackerData }) {
         </table>
       </div>
     </section>
-  );
-}
-
-function SetupView({ accounts }: { accounts: CloudAccount[] }) {
-  return (
-    <div className="tracker-stack">
-      <section className="sync-notice">
-        <CheckCircle2 size={19} />
-        <div>
-          <strong>Cloud data is connected</strong>
-          <span>
-            Account editing remains on your Mac for this phase. Sync again after
-            making changes there.
-          </span>
-        </div>
-      </section>
-      <section className="section-card">
-        <div className="card-heading">
-          <div>
-            <p className="eyebrow">Account structure</p>
-            <h3>{accounts.length} synced accounts</h3>
-          </div>
-        </div>
-        <div className="setup-account-grid">
-          {accounts.map((account) => (
-            <article key={account.id}>
-              <span className="account-symbol"><WalletCards size={17} /></span>
-              <div>
-                <strong>{account.name}</strong>
-                <span>{classLabels[account.class_raw]}</span>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-    </div>
   );
 }
 
