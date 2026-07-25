@@ -53,10 +53,17 @@ export function DirectHoldingsEntry({
 
   const displayedValue = (accountId: string) => {
     if (drafts[accountId] !== undefined) return drafts[accountId];
-    const snapshot = exactSnapshot(accountId);
-    if (!snapshot) return "";
+    const snapshot = data.snapshots
+      .filter(
+        (item) =>
+          item.account_id === accountId &&
+          item.captured_on.slice(0, 7) <= month,
+      )
+      .sort((a, b) => b.captured_on.localeCompare(a.captured_on))[0];
+    const movement = entryDeltaThroughMonth(data, accountId, month);
+    if (!snapshot && movement === 0) return "";
     const closing =
-      Number(snapshot.value_paise) + entryDeltaThroughMonth(data, accountId, month);
+      Number(snapshot?.value_paise ?? 0) + movement;
     return String(closing / 100);
   };
 
