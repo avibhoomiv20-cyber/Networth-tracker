@@ -12,8 +12,10 @@ export function AuthPanel() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [resendBusy, setResendBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [isSuccess, setIsSuccess] = useState(false);
+  const [confirmationEmail, setConfirmationEmail] = useState("");
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -27,13 +29,20 @@ export function AuthPanel() {
     const result =
       mode === "sign-in"
         ? await supabase.auth.signInWithPassword({ email, password })
-        : await supabase.auth.signUp({ email, password });
+        : await supabase.auth.signUp({
+            email,
+            password,
+            options: { emailRedirectTo: window.location.origin },
+          });
 
     if (result.error) {
       setMessage(result.error.message);
     } else if (mode === "sign-up" && !result.data.session) {
       setIsSuccess(true);
-      setMessage("Check your email to confirm your account, then sign in.");
+      setConfirmationEmail(email);
+      setMessage(
+        "Confirmation requested. Check your inbox and spam folder, then confirm your account.",
+      );
     }
 
     setBusy(false);
@@ -43,6 +52,27 @@ export function AuthPanel() {
     setMode(nextMode);
     setMessage("");
     setIsSuccess(false);
+    setConfirmationEmail("");
+  };
+
+  const resendConfirmation = async () => {
+    const supabase = getSupabaseClient();
+    if (!supabase || !confirmationEmail) return;
+
+    setResendBusy(true);
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email: confirmationEmail,
+      options: { emailRedirectTo: window.location.origin },
+    });
+
+    setIsSuccess(!error);
+    setMessage(
+      error
+        ? error.message
+        : "Confirmation requested again. Delivery can take a few minutes.",
+    );
+    setResendBusy(false);
   };
 
   return (
@@ -153,6 +183,16 @@ export function AuthPanel() {
               <AlertCircle size={16} />
               {message}
             </p>
+          )}
+          {isSuccess && confirmationEmail && (
+            <button
+              className="resend-button"
+              disabled={resendBusy}
+              onClick={resendConfirmation}
+              type="button"
+            >
+              {resendBusy ? "Requesting…" : "Resend confirmation email"}
+            </button>
           )}
 
           <p className="auth-fineprint">

@@ -426,6 +426,24 @@ a {
   color: var(--primary-dark);
 }
 
+.resend-button {
+  margin-top: 0.75rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--primary-dark);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 680;
+  text-decoration: underline;
+  text-underline-offset: 0.2rem;
+}
+
+.resend-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
 .auth-fineprint {
   margin: 1.4rem 0 0;
   color: var(--ink-faint);
