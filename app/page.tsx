@@ -33,9 +33,11 @@ export default function Home() {
     }
 
     let active = true;
+    let requestSequence = 0;
 
     const prepareWorkspace = async (nextSession: Session | null) => {
       if (!active) return;
+      const requestID = ++requestSequence;
 
       setSession(nextSession);
       setWorkspace(null);
@@ -106,7 +108,7 @@ export default function Home() {
             .order("month_start"),
         ]);
 
-      if (!active) return;
+      if (!active || requestID !== requestSequence) return;
 
       const dataError =
         accountResult.error ??
@@ -147,9 +149,21 @@ export default function Home() {
       window.setTimeout(() => void prepareWorkspace(nextSession), 0);
     });
 
+    const refreshFromCloud = () => {
+      if (document.visibilityState !== "visible") return;
+      void supabase.auth.getSession().then(({ data }) => {
+        void prepareWorkspace(data.session);
+      });
+    };
+
+    window.addEventListener("focus", refreshFromCloud);
+    document.addEventListener("visibilitychange", refreshFromCloud);
+
     return () => {
       active = false;
       subscription.unsubscribe();
+      window.removeEventListener("focus", refreshFromCloud);
+      document.removeEventListener("visibilitychange", refreshFromCloud);
     };
   }, []);
 
