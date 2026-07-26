@@ -12,6 +12,12 @@ import type {
   TrackerData,
 } from "@/lib/types";
 
+type MarketDraft = {
+  quantity: string;
+  unitPrice: string;
+  usdRate: string;
+};
+
 export function DirectHoldingsEntry({
   workspaceId,
   data,
@@ -31,6 +37,7 @@ export function DirectHoldingsEntry({
     availableClasses[0] ?? "cash",
   );
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [marketDrafts, setMarketDrafts] = useState<Record<string, MarketDraft>>({});
   const [remark, setRemark] = useState(
     data.notes.find((note) => note.month_start.slice(0, 7) === latestMonth)?.note ??
       "",
@@ -49,27 +56,47 @@ export function DirectHoldingsEntry({
           snapshot.account_id === accountId &&
           snapshot.captured_on.slice(0, 7) === month,
       )
-      .sort((a, b) => b.captured_on.localeCompare(a.captured_on))[0];
+      .sort(preferredSnapshotOrder)[0];
+
+  const carriedSnapshot = (accountId: string) =>
+    data.snapshots
+      .filter(
+        (snapshot) =>
+          snapshot.account_id === accountId &&
+          snapshot.captured_on.slice(0, 7) === month,
+      )
+      .sort(preferredSnapshotOrder)[0];
+
+  const marketDraft = (accountId: string): MarketDraft => {
+    const carried = carriedSnapshot(accountId);
+    return marketDrafts[accountId] ?? {
+      quantity: carried?.quantity ? String(carried.quantity) : "",
+      unitPrice: carried?.unit_price_paise
+        ? String(Number(carried.unit_price_paise) / 100)
+        : "",
+      usdRate: carried?.usd_to_inr ? String(carried.usd_to_inr) : "",
+    };
+  };
+
+  const updateMarketDraft = (accountId: string, change: Partial<MarketDraft>) => {
+    const next = { ...marketDraft(accountId), ...change };
+    setMarketDrafts((current) => ({ ...current, [accountId]: next }));
+    const closing = Number(next.quantity) * Number(next.unitPrice) * Number(next.usdRate);
+    if (Number.isFinite(closing) && closing > 0) {
+      setDrafts((current) => ({ ...current, [accountId]: String(closing) }));
+    }
+  };
 
   const displayedValue = (accountId: string) => {
     if (drafts[accountId] !== undefined) return drafts[accountId];
-    const snapshot = data.snapshots
-      .filter(
-        (item) =>
-          item.account_id === accountId &&
-          item.captured_on.slice(0, 7) <= month,
-      )
-      .sort((a, b) => b.captured_on.localeCompare(a.captured_on))[0];
-    const movement = entryDeltaThroughMonth(data, accountId, month);
-    if (!snapshot && movement === 0) return "";
-    const closing =
-      Number(snapshot?.value_paise ?? 0) + movement;
-    return String(closing / 100);
+    const snapshot = exactSnapshot(accountId);
+    return snapshot ? String(Number(snapshot.value_paise) / 100) : "";
   };
 
   const selectMonth = (nextMonth: string) => {
     setMonth(nextMonth);
     setDrafts({});
+    setMarketDrafts({});
     setRemark(
       data.notes.find((note) => note.month_start.slice(0, 7) === nextMonth)?.note ??
         "",
@@ -95,17 +122,17 @@ export function DirectHoldingsEntry({
       for (const [accountId, value] of changed) {
         const closingPaise = Math.round(Number(value) * 100);
         if (!Number.isFinite(closingPaise)) continue;
-        const rawValue =
-          closingPaise - entryDeltaThroughMonth(data, accountId, month);
+        const rawValue = closingPaise;
         const existing = exactSnapshot(accountId);
+        const market = marketDraft(accountId);
         const payload = {
           workspace_id: workspaceId,
           account_id: accountId,
           captured_on: `${month}-15`,
           value_paise: rawValue,
-          quantity: existing?.quantity ?? 0,
-          unit_price_paise: existing?.unit_price_paise ?? 0,
-          usd_to_inr: existing?.usd_to_inr ?? 0,
+          quantity: Number(market.quantity) || 0,
+          unit_price_paise: Math.round(Number(market.unitPrice) * 100) || 0,
+          usd_to_inr: Number(market.usdRate) || 0,
           source: "manual",
           note: "Web monthly value",
         };
@@ -210,9 +237,12 @@ export function DirectHoldingsEntry({
           ))}
         </div>
 
-        <div className="direct-holding-list">
+        <div className={`direct-holding-list ${assetClass === "companyStock" ? "market-holdings" : ""}`}>
           <div className="direct-row-heading">
             <span>Holding</span>
+            {assetClass === "companyStock" && <span>Shares</span>}
+            {assetClass === "companyStock" && <span>USD price</span>}
+            {assetClass === "companyStock" && <span>USD to INR</span>}
             <span>Closing balance</span>
           </div>
           {accounts.map((account) => (
@@ -221,6 +251,33 @@ export function DirectHoldingsEntry({
                 <strong>{account.name}</strong>
                 <small>{account.broker_name || classLabels[account.class_raw]}</small>
               </span>
+              {assetClass === "companyStock" && (
+                <input
+                  className="direct-market-input"
+                  inputMode="decimal"
+                  placeholder="Shares"
+                  value={marketDraft(account.id).quantity}
+                  onChange={(event) => updateMarketDraft(account.id, { quantity: event.target.value })}
+                />
+              )}
+              {assetClass === "companyStock" && (
+                <input
+                  className="direct-market-input"
+                  inputMode="decimal"
+                  placeholder="USD"
+                  value={marketDraft(account.id).unitPrice}
+                  onChange={(event) => updateMarketDraft(account.id, { unitPrice: event.target.value })}
+                />
+              )}
+              {assetClass === "companyStock" && (
+                <input
+                  className="direct-market-input"
+                  inputMode="decimal"
+                  placeholder="Rate"
+                  value={marketDraft(account.id).usdRate}
+                  onChange={(event) => updateMarketDraft(account.id, { usdRate: event.target.value })}
+                />
+              )}
               <span className="currency-input">
                 <b>₹</b>
                 <input
@@ -309,11 +366,38 @@ export function DirectAccountBookEntry({
   const usesUnits =
     selectedAccount?.class_raw === "companyStock" ||
     selectedAccount?.class_raw === "gold";
+  const selectedMonth = date.slice(0, 7);
+  const openingSnapshot = preferredSnapshotForMonth(
+    data.snapshots,
+    accountId,
+    shiftMonth(selectedMonth, -1),
+  );
+  const openingBalance = Number(openingSnapshot?.value_paise ?? 0);
+  const monthMovement = data.entries
+    .filter(
+      (entry) =>
+        entry.account_id === accountId && entry.entry_date.slice(0, 7) === selectedMonth,
+    )
+    .reduce(
+      (total, entry) =>
+        total + Number(entry.amount_paise) * (entry.direction === "increase" ? 1 : -1),
+      0,
+    );
+  const currentClosing = openingBalance + monthMovement;
 
   const update = (id: string, change: Partial<EntryDraft>) =>
     setDrafts((current) =>
       current.map((draft) => (draft.id === id ? { ...draft, ...change } : draft)),
     );
+
+  const saveOnAmountBlur = (draft: EntryDraft) => {
+    if (
+      draft.description.trim() &&
+      calculatedAmount(draft, selectedAccount?.class_raw) > 0
+    ) {
+      void saveRows();
+    }
+  };
 
   const saveRows = async () => {
     const valid = drafts.filter(
@@ -347,9 +431,56 @@ export function DirectAccountBookEntry({
           "id,account_id,entry_date,description,comment,direction,amount_paise,quantity,unit_price_paise,usd_to_inr",
         );
       if (error || !rows) throw new Error(error?.message ?? "Entries were not saved.");
+      const savedEntries = rows as CloudEntry[];
+      const month = date.slice(0, 7);
+      const previousMonth = shiftMonth(month, -1);
+      const opening = preferredSnapshotForMonth(data.snapshots, accountId, previousMonth);
+      const currentEntries = [...data.entries, ...savedEntries].filter(
+        (entry) =>
+          entry.account_id === accountId && entry.entry_date.slice(0, 7) === month,
+      );
+      const direction = (entry: CloudEntry) => entry.direction === "increase" ? 1 : -1;
+      const closingPaise = Number(opening?.value_paise ?? 0) + currentEntries.reduce(
+        (total, entry) => total + direction(entry) * Number(entry.amount_paise),
+        0,
+      );
+      const closingQuantity = Number(opening?.quantity ?? 0) + currentEntries.reduce(
+        (total, entry) => total + direction(entry) * Number(entry.quantity),
+        0,
+      );
+      const currentSnapshot = preferredSnapshotForMonth(data.snapshots, accountId, month);
+      const snapshotPayload = {
+        workspace_id: workspaceId,
+        account_id: accountId,
+        captured_on: `${month}-15`,
+        value_paise: closingPaise,
+        quantity: closingQuantity,
+        unit_price_paise: currentSnapshot?.unit_price_paise ?? opening?.unit_price_paise ?? 0,
+        usd_to_inr: currentSnapshot?.usd_to_inr ?? opening?.usd_to_inr ?? 0,
+        source: "manual",
+        note: "Account Book calculated",
+      };
+      const snapshotQuery = currentSnapshot
+        ? supabase.from("nw_account_snapshots").update(snapshotPayload).eq("id", currentSnapshot.id)
+        : supabase.from("nw_account_snapshots").insert(snapshotPayload);
+      const { data: snapshotRow, error: snapshotError } = await snapshotQuery
+        .select("id,account_id,captured_on,value_paise,quantity,unit_price_paise,usd_to_inr,source,note")
+        .single();
+      if (snapshotError || !snapshotRow) {
+        throw new Error(snapshotError?.message ?? "The closing holding was not saved.");
+      }
+      const savedSnapshot = snapshotRow as CloudSnapshot;
       onDataChange({
         ...data,
-        entries: [...data.entries, ...(rows as CloudEntry[])],
+        entries: [...data.entries, ...savedEntries],
+        snapshots: [
+          ...data.snapshots.filter(
+            (snapshot) =>
+              snapshot.id !== savedSnapshot.id &&
+              !(snapshot.account_id === accountId && snapshot.captured_on.slice(0, 7) === month),
+          ),
+          savedSnapshot,
+        ],
       });
       setDrafts([newDraft()]);
       setMessage(`${rows.length} ${rows.length === 1 ? "entry" : "entries"} saved.`);
@@ -395,6 +526,23 @@ export function DirectAccountBookEntry({
         </div>
       </section>
 
+      {selectedAccount && (
+        <section className="book-balance-strip" aria-label="Account Book balance summary">
+          <div>
+            <span>Last month closing</span>
+            <strong>{formatINR(openingBalance)}</strong>
+          </div>
+          <div className={monthMovement < 0 ? "movement-out" : "movement-in"}>
+            <span>{monthMovement < 0 ? "This month out" : "This month in"}</span>
+            <strong>{formatINR(Math.abs(monthMovement))}</strong>
+          </div>
+          <div className="closing-balance">
+            <span>Current month closing</span>
+            <strong>{formatINR(currentClosing)}</strong>
+          </div>
+        </section>
+      )}
+
       <section className="section-card">
         <div className="book-entry-grid book-entry-labels">
           <span>Description</span>
@@ -439,7 +587,12 @@ export function DirectAccountBookEntry({
                 </select>
                 <span className="currency-input">
                   <b>₹</b>
-                  <input placeholder="Amount" value={draft.amount} onChange={(event) => update(draft.id, { amount: event.target.value })} />
+                  <input
+                    placeholder="Amount"
+                    value={draft.amount}
+                    onChange={(event) => update(draft.id, { amount: event.target.value })}
+                    onBlur={() => saveOnAmountBlur(draft)}
+                  />
                 </span>
               </div>
               <div className="draft-comment">
@@ -489,22 +642,30 @@ export function DirectAccountBookEntry({
   );
 }
 
-function entryDeltaThroughMonth(
-  data: TrackerData,
+function preferredSnapshotForMonth(
+  snapshots: CloudSnapshot[],
   accountId: string,
   month: string,
 ) {
-  return data.entries
+  return snapshots
     .filter(
-      (entry) =>
-        entry.account_id === accountId && entry.entry_date.slice(0, 7) <= month,
+      (snapshot) =>
+        snapshot.account_id === accountId && snapshot.captured_on.slice(0, 7) === month,
     )
-    .reduce(
-      (total, entry) =>
-        total +
-        Number(entry.amount_paise) * (entry.direction === "increase" ? 1 : -1),
-      0,
-    );
+    .sort(preferredSnapshotOrder)[0];
+}
+
+function preferredSnapshotOrder(a: CloudSnapshot, b: CloudSnapshot) {
+  const aIsCalculated = a.note === "Account Book calculated";
+  const bIsCalculated = b.note === "Account Book calculated";
+  if (aIsCalculated !== bIsCalculated) return aIsCalculated ? 1 : -1;
+  return b.captured_on.localeCompare(a.captured_on);
+}
+
+function shiftMonth(month: string, amount: number) {
+  const date = new Date(`${month}-01T00:00:00Z`);
+  date.setUTCMonth(date.getUTCMonth() + amount);
+  return date.toISOString().slice(0, 7);
 }
 
 function calculatedAmount(draft: EntryDraft, assetClass?: AssetClass) {

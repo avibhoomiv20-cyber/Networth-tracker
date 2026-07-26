@@ -66,7 +66,13 @@ export function buildMonthlyRows(data: TrackerData): MonthlyRow[] {
     const monthId = snapshot.captured_on.slice(0, 7);
     const key = `${snapshot.account_id}|${monthId}`;
     const existing = snapshots.get(key);
-    if (!existing || snapshot.captured_on >= existing.captured_on) {
+    const snapshotIsCalculated = snapshot.note === "Account Book calculated";
+    const existingIsCalculated = existing?.note === "Account Book calculated";
+    if (
+      !existing ||
+      (existingIsCalculated && !snapshotIsCalculated) ||
+      (snapshotIsCalculated === existingIsCalculated && snapshot.captured_on >= existing.captured_on)
+    ) {
       snapshots.set(key, snapshot);
     }
   }
@@ -82,9 +88,6 @@ export function buildMonthlyRows(data: TrackerData): MonthlyRow[] {
   const notes = new Map(
     data.notes.map((item) => [item.month_start.slice(0, 7), item.note]),
   );
-  const firstEntryMonth = data.entries
-    .map((entry) => entry.entry_date.slice(0, 7))
-    .sort()[0];
   const byMonth = new Map<string, MonthlyRow>();
 
   for (const monthId of monthIds) {
@@ -101,22 +104,22 @@ export function buildMonthlyRows(data: TrackerData): MonthlyRow[] {
 
   for (const account of data.accounts) {
     let carriedValue: number | null = null;
-    let cumulativeDelta = 0;
 
     for (const monthId of monthIds) {
       const snapshot = snapshots.get(`${account.id}|${monthId}`);
-      if (snapshot) carriedValue = Number(snapshot.value_paise);
-      cumulativeDelta += deltas.get(`${account.id}|${monthId}`) ?? 0;
-
-      const ledgerStarted = Boolean(firstEntryMonth && firstEntryMonth <= monthId);
-      if (!snapshot && !ledgerStarted) continue;
-      if (carriedValue === null && cumulativeDelta === 0) continue;
-
-      const value = (carriedValue ?? 0) + cumulativeDelta;
+      const movement = deltas.get(`${account.id}|${monthId}`) ?? 0;
+      if (snapshot) {
+        carriedValue = Number(snapshot.value_paise);
+      } else if (carriedValue !== null) {
+        carriedValue += movement;
+      } else if (movement !== 0) {
+        carriedValue = movement;
+      }
+      if (carriedValue === null) continue;
       const row = byMonth.get(monthId);
       if (!row) continue;
-      row.byAccount[account.id] = value;
-      row.byClass[account.class_raw] += value;
+      row.byAccount[account.id] = carriedValue;
+      row.byClass[account.class_raw] += carriedValue;
     }
   }
 
