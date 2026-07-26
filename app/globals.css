@@ -627,6 +627,41 @@ a {
   gap: 0.65rem;
 }
 
+.month-navigator {
+  display: inline-flex;
+  min-height: 2.55rem;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.8rem;
+  background: rgba(255, 255, 255, 0.76);
+  box-shadow: var(--shadow-sm);
+}
+
+.month-navigator strong {
+  min-width: 8.8rem;
+  color: var(--ink);
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+.month-navigator button {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 0;
+  border-radius: 0.58rem;
+  background: transparent;
+  color: var(--primary-dark);
+  cursor: pointer;
+}
+
+.month-navigator button:hover {
+  background: var(--primary-soft);
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -2061,6 +2096,16 @@ a {
   .page-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .header-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .month-navigator {
+    flex: 1;
+    justify-content: space-between;
   }
 
   .setup-grid,

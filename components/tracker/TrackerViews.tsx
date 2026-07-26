@@ -28,6 +28,7 @@ type TrackerViewsProps = {
   section: AppSection;
   workspaceId: string;
   data: TrackerData;
+  selectedMonth: string;
   onDataChange: (data: TrackerData) => void;
 };
 
@@ -47,26 +48,31 @@ export function TrackerViews({
   section,
   workspaceId,
   data,
+  selectedMonth,
   onDataChange,
 }: TrackerViewsProps) {
   const rows = useMemo(() => buildMonthlyRows(data), [data]);
 
   switch (section) {
     case "summary":
-      return <SummaryView rows={rows} />;
+      return <SummaryView rows={rows} selectedMonth={selectedMonth} />;
     case "holdings":
       return (
         <DirectHoldingsEntry
+          key={selectedMonth}
           workspaceId={workspaceId}
           data={data}
+          selectedMonth={selectedMonth}
           onDataChange={onDataChange}
         />
       );
     case "account-book":
       return (
         <DirectAccountBookEntry
+          key={selectedMonth}
           workspaceId={workspaceId}
           data={data}
+          selectedMonth={selectedMonth}
           onDataChange={onDataChange}
         />
       );
@@ -87,12 +93,23 @@ export function TrackerViews({
 
 function SummaryView({
   rows,
+  selectedMonth,
 }: {
   rows: ReturnType<typeof buildMonthlyRows>;
+  selectedMonth: string;
 }) {
-  const current = rows.at(-1);
-  const previous = rows.at(-2);
-  if (!current) return <SyncedEmptyState />;
+  const currentIndex = rows.findIndex((row) => row.monthId === selectedMonth);
+  const current = rows[currentIndex];
+  const previous = currentIndex > 0 ? rows[currentIndex - 1] : undefined;
+  if (!current) {
+    return (
+      <InfoEmptyState
+        icon={<TrendingUp size={22} />}
+        title={`No values for ${formatMonth(selectedMonth)}`}
+        copy="Choose a recorded month or add the month’s holdings in the Holdings tab."
+      />
+    );
+  }
 
   const change = current.netWorth - (previous?.netWorth ?? current.netWorth);
   const ratio =

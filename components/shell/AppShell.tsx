@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
   BookOpenText,
   ChartNoAxesCombined,
+  ChevronLeft,
+  ChevronRight,
   CircleAlert,
   Clock3,
   LayoutDashboard,
@@ -17,6 +19,7 @@ import { GettingStarted } from "@/components/onboarding/GettingStarted";
 import { TrackerViews } from "@/components/tracker/TrackerViews";
 import { BrandMark } from "@/components/ui/BrandMark";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { buildMonthlyRows } from "@/lib/tracker";
 import type {
   AppSection,
   TrackerData,
@@ -78,11 +81,23 @@ export function AppShell({
 }: AppShellProps) {
   const [activeSection, setActiveSection] = useState<AppSection>("summary");
   const [currentData, setCurrentData] = useState(trackerData);
+  const [selectedMonth, setSelectedMonth] = useState("");
   const email = session.user.email ?? "Signed-in user";
   const initials = email.slice(0, 2).toUpperCase();
   const copy = sectionCopy[activeSection];
   const isNewWorkspace =
     (currentData?.accounts.length ?? workspace?.accountCount ?? 0) === 0;
+  const monthlyRows = useMemo(
+    () => (currentData ? buildMonthlyRows(currentData) : []),
+    [currentData],
+  );
+  const activeMonth =
+    selectedMonth ||
+    monthlyRows.at(-1)?.monthId ||
+    new Date().toISOString().slice(0, 7);
+  const usesMonthlyView = ["summary", "holdings", "account-book"].includes(
+    activeSection,
+  );
 
   useEffect(() => {
     setCurrentData(trackerData);
@@ -90,6 +105,12 @@ export function AppShell({
 
   const signOut = async () => {
     await getSupabaseClient()?.auth.signOut();
+  };
+
+  const moveMonth = (amount: number) => {
+    const date = new Date(`${activeMonth}-01T00:00:00Z`);
+    date.setUTCMonth(date.getUTCMonth() + amount);
+    setSelectedMonth(date.toISOString().slice(0, 7));
   };
 
   const nav = (className: string) => (
@@ -147,6 +168,25 @@ export function AppShell({
             <p>{copy.description}</p>
           </div>
           <div className="header-actions">
+            {usesMonthlyView && (
+              <div className="month-navigator" aria-label="Selected month">
+                <button
+                  aria-label="Previous month"
+                  onClick={() => moveMonth(-1)}
+                  type="button"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+                <strong>{formatLongMonth(activeMonth)}</strong>
+                <button
+                  aria-label="Next month"
+                  onClick={() => moveMonth(1)}
+                  type="button"
+                >
+                  <ChevronRight size={18} />
+                </button>
+              </div>
+            )}
             <span className="status-pill">
               <span className="status-dot" /> Synced workspace
             </span>
@@ -167,6 +207,7 @@ export function AppShell({
             section={activeSection}
             workspaceId={workspace.id}
             data={currentData}
+            selectedMonth={activeMonth}
             onDataChange={setCurrentData}
           />
         ) : (
@@ -191,4 +232,12 @@ export function AppShell({
       </main>
     </div>
   );
+}
+
+function formatLongMonth(month: string) {
+  return new Intl.DateTimeFormat("en-IN", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${month}-01T00:00:00Z`));
 }

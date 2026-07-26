@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { CheckCircle2, Plus, Save, Trash2 } from "lucide-react";
-import { buildMonthlyRows, classLabels, classOrder, formatINR, formatMonth } from "@/lib/tracker";
+import { classLabels, classOrder, formatINR, formatMonth } from "@/lib/tracker";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import type {
   AssetClass,
@@ -21,25 +21,25 @@ type MarketDraft = {
 export function DirectHoldingsEntry({
   workspaceId,
   data,
+  selectedMonth,
   onDataChange,
 }: {
   workspaceId: string;
   data: TrackerData;
+  selectedMonth: string;
   onDataChange: (data: TrackerData) => void;
 }) {
   const availableClasses = classOrder.filter((assetClass) =>
     data.accounts.some((account) => account.class_raw === assetClass),
   );
-  const latestMonth =
-    buildMonthlyRows(data).at(-1)?.monthId ?? new Date().toISOString().slice(0, 7);
-  const [month, setMonth] = useState(latestMonth);
+  const month = selectedMonth;
   const [assetClass, setAssetClass] = useState<AssetClass>(
     availableClasses[0] ?? "cash",
   );
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [marketDrafts, setMarketDrafts] = useState<Record<string, MarketDraft>>({});
   const [remark, setRemark] = useState(
-    data.notes.find((note) => note.month_start.slice(0, 7) === latestMonth)?.note ??
+    data.notes.find((note) => note.month_start.slice(0, 7) === selectedMonth)?.note ??
       "",
   );
   const [saving, setSaving] = useState(false);
@@ -91,17 +91,6 @@ export function DirectHoldingsEntry({
     if (drafts[accountId] !== undefined) return drafts[accountId];
     const snapshot = exactSnapshot(accountId);
     return snapshot ? String(Number(snapshot.value_paise) / 100) : "";
-  };
-
-  const selectMonth = (nextMonth: string) => {
-    setMonth(nextMonth);
-    setDrafts({});
-    setMarketDrafts({});
-    setRemark(
-      data.notes.find((note) => note.month_start.slice(0, 7) === nextMonth)?.note ??
-        "",
-    );
-    setMessage("");
   };
 
   const saveMonth = async () => {
@@ -211,16 +200,8 @@ export function DirectHoldingsEntry({
         <div>
           <p className="eyebrow">Enter monthly holdings</p>
           <h2>{formatMonth(month)}</h2>
-          <p>Type balances directly, just like the Mac tracker.</p>
+          <p>Type the closing value for the selected month, just like the Mac tracker.</p>
         </div>
-        <label className="month-control">
-          <span>Month</span>
-          <input
-            type="month"
-            value={month}
-            onChange={(event) => selectMonth(event.target.value)}
-          />
-        </label>
       </section>
 
       <section className="section-card">
@@ -351,14 +332,16 @@ const newDraft = (): EntryDraft => ({
 export function DirectAccountBookEntry({
   workspaceId,
   data,
+  selectedMonth,
   onDataChange,
 }: {
   workspaceId: string;
   data: TrackerData;
+  selectedMonth: string;
   onDataChange: (data: TrackerData) => void;
 }) {
   const [accountId, setAccountId] = useState(data.accounts[0]?.id ?? "");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(`${selectedMonth}-01`);
   const [drafts, setDrafts] = useState<EntryDraft[]>([newDraft()]);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -366,7 +349,6 @@ export function DirectAccountBookEntry({
   const usesUnits =
     selectedAccount?.class_raw === "companyStock" ||
     selectedAccount?.class_raw === "gold";
-  const selectedMonth = date.slice(0, 7);
   const openingSnapshot = preferredSnapshotForMonth(
     data.snapshots,
     accountId,
@@ -506,9 +488,9 @@ export function DirectAccountBookEntry({
     <div className="tracker-stack">
       <section className="direct-entry-header account-book-heading">
         <div>
-          <p className="eyebrow">Account Book</p>
-          <h2>Write entries directly</h2>
-          <p>Select an account, add one or more rows, then save them together.</p>
+            <p className="eyebrow">Account Book</p>
+          <h2>{formatMonth(selectedMonth)}</h2>
+          <p>Start from last month’s closing, then record this month’s movement.</p>
         </div>
         <div className="book-controls">
           <label>
@@ -521,7 +503,13 @@ export function DirectAccountBookEntry({
           </label>
           <label>
             <span>Entry date</span>
-            <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+            <input
+              type="date"
+              min={`${selectedMonth}-01`}
+              max={monthEnd(selectedMonth)}
+              value={date}
+              onChange={(event) => setDate(event.target.value)}
+            />
           </label>
         </div>
       </section>
@@ -666,6 +654,13 @@ function shiftMonth(month: string, amount: number) {
   const date = new Date(`${month}-01T00:00:00Z`);
   date.setUTCMonth(date.getUTCMonth() + amount);
   return date.toISOString().slice(0, 7);
+}
+
+function monthEnd(month: string) {
+  const nextMonth = new Date(`${month}-01T00:00:00Z`);
+  nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
+  nextMonth.setUTCDate(0);
+  return nextMonth.toISOString().slice(0, 10);
 }
 
 function calculatedAmount(draft: EntryDraft, assetClass?: AssetClass) {
