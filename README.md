@@ -27,13 +27,14 @@ analysis is served by the authenticated Supabase Edge Function in
 `../supabase/functions/networth-ai-chat`. Configure it once in Supabase:
 
 ```bash
-supabase secrets set OPENAI_API_KEY=your-server-side-key OPENAI_MODEL=gpt-5.6
+supabase secrets set GEMINI_API_KEY=your-server-side-key GEMINI_MODEL=gemini-2.5-flash-lite
 supabase functions deploy networth-ai-chat
 ```
 
 The function validates the caller's Supabase session and queries through the
-caller's RLS permissions. The OpenAI key is never shipped to the browser or Mac
-app, and Responses API storage is disabled.
+caller's RLS permissions. The Gemini key is never shipped to the browser or Mac
+app. Before calling Gemini, the function removes workspace names, account names,
+descriptions, and comments; only anonymized financial aggregates are sent.
 
 ## Useful Commands
 

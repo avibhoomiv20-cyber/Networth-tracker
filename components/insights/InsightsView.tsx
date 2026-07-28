@@ -295,7 +295,9 @@ function AssistantPanel({
           selectedMonth,
         },
       });
-      if (invokeError) throw invokeError;
+      if (invokeError) {
+        throw new Error(await readFunctionError(invokeError));
+      }
       if (!data?.answer) {
         throw new Error(data?.error ?? "The assistant returned no answer.");
       }
@@ -393,9 +395,7 @@ function AssistantPanel({
           <div className="chat-error" role="alert">
             <AlertTriangle size={15} />
             <span>
-              {error.includes("non-2xx")
-                ? "AI chat needs its server key configured. Your deterministic insights remain available."
-                : error}
+              {error}
             </span>
           </div>
         )}
@@ -433,11 +433,35 @@ function AssistantPanel({
         </button>
       </form>
       <p className="chat-privacy">
-        Conversation history is stored only in this browser. AI can read your
-        workspace but cannot change it.
+        History stays in this browser. Gemini receives anonymized totals,
+        categories, and dates—not names or notes—and cannot change your data.
+        Google may use free-tier requests to improve its products.
       </p>
     </div>
   );
+}
+
+async function readFunctionError(error: unknown) {
+  if (
+    error &&
+    typeof error === "object" &&
+    "context" in error &&
+    error.context instanceof Response
+  ) {
+    try {
+      const body = (await error.context.clone().json()) as {
+        error?: unknown;
+      };
+      if (typeof body.error === "string" && body.error.trim()) {
+        return body.error;
+      }
+    } catch {
+      // Fall back to the SDK message when the response is not JSON.
+    }
+  }
+  return error instanceof Error
+    ? error.message
+    : "The assistant is temporarily unavailable.";
 }
 
 function formatRelativeTime(date: Date) {
