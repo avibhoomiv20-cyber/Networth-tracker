@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
   BookOpenText,
@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   LogOut,
   NotebookTabs,
+  RefreshCw,
   Settings2,
   SlidersHorizontal,
 } from "lucide-react";
@@ -19,7 +20,7 @@ import { GettingStarted } from "@/components/onboarding/GettingStarted";
 import { TrackerViews } from "@/components/tracker/TrackerViews";
 import { BrandMark } from "@/components/ui/BrandMark";
 import { getSupabaseClient } from "@/lib/supabase/client";
-import { buildMonthlyRows } from "@/lib/tracker";
+import { syncRecoveryMode } from "@/lib/syncMode";
 import type {
   AppSection,
   TrackerData,
@@ -31,6 +32,8 @@ type AppShellProps = {
   workspace: WorkspaceSummary | null;
   trackerData: TrackerData | null;
   setupError: string;
+  refreshing: boolean;
+  onRefresh: () => void;
 };
 
 const sections: Array<{
@@ -78,6 +81,8 @@ export function AppShell({
   workspace,
   trackerData,
   setupError,
+  refreshing,
+  onRefresh,
 }: AppShellProps) {
   const [activeSection, setActiveSection] = useState<AppSection>("summary");
   const [currentData, setCurrentData] = useState(trackerData);
@@ -87,14 +92,7 @@ export function AppShell({
   const copy = sectionCopy[activeSection];
   const isNewWorkspace =
     (currentData?.accounts.length ?? workspace?.accountCount ?? 0) === 0;
-  const monthlyRows = useMemo(
-    () => (currentData ? buildMonthlyRows(currentData) : []),
-    [currentData],
-  );
-  const activeMonth =
-    selectedMonth ||
-    monthlyRows.at(-1)?.monthId ||
-    new Date().toISOString().slice(0, 7);
+  const activeMonth = selectedMonth || currentLocalMonth();
   const usesMonthlyView = ["summary", "holdings", "account-book"].includes(
     activeSection,
   );
@@ -187,8 +185,21 @@ export function AppShell({
                 </button>
               </div>
             )}
+            <button
+              className="secondary-button"
+              disabled={refreshing}
+              onClick={onRefresh}
+              type="button"
+            >
+              <RefreshCw
+                className={refreshing ? "spin" : undefined}
+                size={16}
+              />
+              <span>{refreshing ? "Refreshing…" : "Refresh data"}</span>
+            </button>
             <span className="status-pill">
-              <span className="status-dot" /> Synced workspace
+              <span className="status-dot" />{" "}
+              {syncRecoveryMode ? "Read-only recovery" : "Synced workspace"}
             </span>
           </div>
         </header>
@@ -240,4 +251,9 @@ function formatLongMonth(month: string) {
     year: "numeric",
     timeZone: "UTC",
   }).format(new Date(`${month}-01T00:00:00Z`));
+}
+
+function currentLocalMonth() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }

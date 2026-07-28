@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -18,9 +19,18 @@ import {
   formatINR,
   formatMonth,
 } from "@/lib/tracker";
+import { parseMonthlyRemarks } from "@/lib/monthlyRemarks";
+import { encodeMonthlyRemarks } from "@/lib/monthlyRemarks";
+import {
+  appliedRows,
+  applySyncBatch,
+  syncErrorMessage,
+} from "@/lib/syncMutations";
+import { syncRecoveryMode } from "@/lib/syncMode";
 import type {
   AppSection,
   AssetClass,
+  CloudMonthlyNote,
   TrackerData,
 } from "@/lib/types";
 
@@ -52,12 +62,22 @@ export function TrackerViews({
   onDataChange,
 }: TrackerViewsProps) {
   const rows = useMemo(() => buildMonthlyRows(data), [data]);
+  let content: ReactNode;
 
   switch (section) {
     case "summary":
-      return <SummaryView rows={rows} selectedMonth={selectedMonth} />;
+      content = (
+        <SummaryView
+          workspaceId={workspaceId}
+          data={data}
+          onDataChange={onDataChange}
+          rows={rows}
+          selectedMonth={selectedMonth}
+        />
+      );
+      break;
     case "holdings":
-      return (
+      content = (
         <DirectHoldingsEntry
           key={selectedMonth}
           workspaceId={workspaceId}
@@ -66,8 +86,9 @@ export function TrackerViews({
           onDataChange={onDataChange}
         />
       );
+      break;
     case "account-book":
-      return (
+      content = (
         <DirectAccountBookEntry
           key={selectedMonth}
           workspaceId={workspaceId}
@@ -76,25 +97,53 @@ export function TrackerViews({
           onDataChange={onDataChange}
         />
       );
+      break;
     case "ledger":
-      return <LedgerView rows={rows} />;
+      content = <LedgerView rows={rows} />;
+      break;
     case "history":
-      return <HistoryView data={data} />;
+      content = <HistoryView data={data} />;
+      break;
     case "setup":
-      return (
+      content = (
         <CloudDataManager
           workspaceId={workspaceId}
           data={data}
           onDataChange={onDataChange}
         />
       );
+      break;
   }
+
+  return (
+    <div className="tracker-stack">
+      {syncRecoveryMode && (
+        <section className="sync-recovery-banner" role="status">
+          <strong>Recovery protection is on</strong>
+          <span>
+            The latest data remains on the Mac. Web editing is temporarily
+            locked until the safety backup, local audit, and atomic cloud
+            replacement are verified.
+          </span>
+        </section>
+      )}
+      <fieldset className="sync-recovery-content" disabled={syncRecoveryMode}>
+        {content}
+      </fieldset>
+    </div>
+  );
 }
 
 function SummaryView({
+  workspaceId,
+  data,
+  onDataChange,
   rows,
   selectedMonth,
 }: {
+  workspaceId: string;
+  data: TrackerData;
+  onDataChange: (data: TrackerData) => void;
   rows: ReturnType<typeof buildMonthlyRows>;
   selectedMonth: string;
 }) {
@@ -140,8 +189,16 @@ function SummaryView({
           />
           <Metric label="Equity ratio" value={`${ratio}%`} tone="blue" />
         </div>
-        {current.note && <p className="month-note">{current.note}</p>}
+        {current.note && <p className="month-note">{parseMonthlyRemarks(current.note).overall}</p>}
       </section>
+
+      <SummaryRemarksEditor
+        key={`${selectedMonth}-${data.notes.find((note) => note.month_start.slice(0, 7) === selectedMonth)?.note ?? ""}`}
+        workspaceId={workspaceId}
+        data={data}
+        selectedMonth={selectedMonth}
+        onDataChange={onDataChange}
+      />
 
       <section className="section-card">
         <div className="card-heading">
@@ -187,6 +244,91 @@ function SummaryView({
 
       <MonthlyTable rows={rows} />
     </div>
+  );
+}
+
+function SummaryRemarksEditor({
+  workspaceId,
+  data,
+  selectedMonth,
+  onDataChange,
+}: {
+  workspaceId: string;
+  data: TrackerData;
+  selectedMonth: string;
+  onDataChange: (data: TrackerData) => void;
+}) {
+  const sourceNote = data.notes.find(
+    (note) => note.month_start.slice(0, 7) === selectedMonth,
+  );
+  const overall = parseMonthlyRemarks(sourceNote?.note ?? "").overall;
+  const [remark, setRemark] = useState(overall);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const save = async () => {
+    const note = encodeMonthlyRemarks({
+      ...parseMonthlyRemarks(sourceNote?.note ?? ""),
+      overall: remark,
+    });
+    if (note === (sourceNote?.note ?? "")) return;
+
+    setSaving(true);
+    setMessage("");
+    try {
+      const monthStart = `${selectedMonth}-01`;
+      const response = await applySyncBatch(workspaceId, [
+        {
+          entity: "note",
+          action: "upsert",
+          key: monthStart,
+          base_revision: sourceNote?.revision ?? 0,
+          row: { note },
+        },
+      ]);
+      const row = appliedRows<CloudMonthlyNote>(response, "note")[0];
+      if (!row) throw new Error("Remarks could not be saved.");
+      onDataChange({
+        ...data,
+        notes: [
+          ...data.notes.filter((item) => item.month_start !== row.month_start),
+          row,
+        ],
+      });
+      setMessage("Remarks saved.");
+    } catch (error) {
+      setMessage(syncErrorMessage(error, "Remarks could not be saved."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="section-card summary-remarks">
+      <div className="card-heading">
+        <div>
+          <p className="eyebrow">Overall monthly remarks</p>
+          <h3>{formatMonth(selectedMonth)}</h3>
+        </div>
+        {message && <span className={message === "Remarks saved." ? "success" : ""}>{message}</span>}
+      </div>
+      <p>Use this for the month-wide summary. Category comments belong in Holdings.</p>
+      <textarea
+        placeholder="Add an overall comment for this month"
+        value={remark}
+        onChange={(event) => setRemark(event.target.value)}
+      />
+      <div className="summary-remarks-actions">
+        <button
+          className="small-primary-button"
+          disabled={saving || remark === overall}
+          onClick={() => void save()}
+          type="button"
+        >
+          {saving ? "Saving…" : "Save remarks"}
+        </button>
+      </div>
+    </section>
   );
 }
 

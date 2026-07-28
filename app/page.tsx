@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { AuthPanel } from "@/components/auth/AuthPanel";
 import { AppShell } from "@/components/shell/AppShell";
@@ -23,7 +23,9 @@ export default function Home() {
   const [workspace, setWorkspace] = useState<WorkspaceSummary | null>(null);
   const [trackerData, setTrackerData] = useState<TrackerData | null>(null);
   const [loading, setLoading] = useState(isSupabaseConfigured);
+  const [refreshing, setRefreshing] = useState(false);
   const [setupError, setSetupError] = useState("");
+  const refreshWorkspaceRef = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
     const supabase = getSupabaseClient();
@@ -34,15 +36,21 @@ export default function Home() {
 
     let active = true;
     let requestSequence = 0;
+    let loadedUserId: string | null = null;
 
-    const prepareWorkspace = async (nextSession: Session | null) => {
+    const prepareWorkspace = async (
+      nextSession: Session | null,
+      resetView: boolean,
+    ) => {
       if (!active) return;
       const requestID = ++requestSequence;
 
       setSession(nextSession);
-      setWorkspace(null);
-      setTrackerData(null);
       setSetupError("");
+      if (resetView) {
+        setWorkspace(null);
+        setTrackerData(null);
+      }
 
       if (!nextSession) {
         setLoading(false);
@@ -81,7 +89,7 @@ export default function Home() {
           supabase
             .from("nw_accounts")
             .select(
-              "id, name, class_raw, notes, ticker_symbol, broker_name, sort_order",
+              "id, name, class_raw, notes, ticker_symbol, broker_name, sort_order, revision",
               { count: "exact" },
             )
             .eq("workspace_id", workspaceId)
@@ -90,20 +98,20 @@ export default function Home() {
           supabase
             .from("nw_account_snapshots")
             .select(
-              "id, account_id, captured_on, value_paise, quantity, unit_price_paise, usd_to_inr, source, note",
+              "id, account_id, captured_on, value_paise, quantity, unit_price_paise, usd_to_inr, source, note, revision",
             )
             .eq("workspace_id", workspaceId)
             .order("captured_on"),
           supabase
             .from("nw_account_entries")
             .select(
-              "id, account_id, entry_date, description, comment, direction, amount_paise, quantity, unit_price_paise, usd_to_inr",
+              "id, account_id, entry_date, description, comment, direction, amount_paise, quantity, unit_price_paise, usd_to_inr, revision",
             )
             .eq("workspace_id", workspaceId)
             .order("entry_date"),
           supabase
             .from("nw_monthly_notes")
-            .select("month_start, note")
+            .select("month_start, note, revision")
             .eq("workspace_id", workspaceId)
             .order("month_start"),
         ]);
@@ -139,33 +147,64 @@ export default function Home() {
       setLoading(false);
     };
 
-    supabase.auth.getSession().then(({ data }) => {
-      void prepareWorkspace(data.session);
-    });
+    refreshWorkspaceRef.current = async () => {
+      const { data, error } = await supabase.auth.getSession();
+      if (error) {
+        setSetupError(error.message);
+        return;
+      }
+      await prepareWorkspace(data.session, false);
+    };
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      window.setTimeout(() => void prepareWorkspace(nextSession), 0);
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      setSession(nextSession);
+
+      if (event === "INITIAL_SESSION") {
+        loadedUserId = nextSession?.user.id ?? null;
+        window.setTimeout(
+          () => void prepareWorkspace(nextSession, true),
+          0,
+        );
+        return;
+      }
+
+      if (event === "SIGNED_OUT") {
+        loadedUserId = null;
+        window.setTimeout(() => void prepareWorkspace(null, true), 0);
+        return;
+      }
+
+      if (
+        event === "SIGNED_IN" &&
+        nextSession &&
+        loadedUserId !== nextSession.user.id
+      ) {
+        loadedUserId = nextSession.user.id;
+        window.setTimeout(
+          () => void prepareWorkspace(nextSession, true),
+          0,
+        );
+      }
     });
-
-    const refreshFromCloud = () => {
-      if (document.visibilityState !== "visible") return;
-      void supabase.auth.getSession().then(({ data }) => {
-        void prepareWorkspace(data.session);
-      });
-    };
-
-    window.addEventListener("focus", refreshFromCloud);
-    document.addEventListener("visibilitychange", refreshFromCloud);
 
     return () => {
       active = false;
+      refreshWorkspaceRef.current = null;
       subscription.unsubscribe();
-      window.removeEventListener("focus", refreshFromCloud);
-      document.removeEventListener("visibilitychange", refreshFromCloud);
     };
   }, []);
+
+  const refreshFromCloud = async () => {
+    if (!refreshWorkspaceRef.current || refreshing) return;
+    setRefreshing(true);
+    try {
+      await refreshWorkspaceRef.current();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -203,6 +242,8 @@ export default function Home() {
       workspace={workspace}
       trackerData={trackerData}
       setupError={setupError}
+      refreshing={refreshing}
+      onRefresh={refreshFromCloud}
     />
   );
 }

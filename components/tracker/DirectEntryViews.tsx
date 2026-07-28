@@ -2,8 +2,20 @@
 
 import { useMemo, useState } from "react";
 import { CheckCircle2, Plus, Save, Trash2 } from "lucide-react";
-import { classLabels, classOrder, formatINR, formatMonth } from "@/lib/tracker";
-import { getSupabaseClient } from "@/lib/supabase/client";
+import {
+  classLabels,
+  classOrder,
+  formatINR,
+  formatMonth,
+  preferredSnapshotOrder,
+} from "@/lib/tracker";
+import { encodeMonthlyRemarks, parseMonthlyRemarks } from "@/lib/monthlyRemarks";
+import {
+  appliedRows,
+  applySyncBatch,
+  syncErrorMessage,
+  type SyncOperation,
+} from "@/lib/syncMutations";
 import type {
   AssetClass,
   CloudEntry,
@@ -38,12 +50,30 @@ export function DirectHoldingsEntry({
   );
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [marketDrafts, setMarketDrafts] = useState<Record<string, MarketDraft>>({});
-  const [remark, setRemark] = useState(
-    data.notes.find((note) => note.month_start.slice(0, 7) === selectedMonth)?.note ??
-      "",
+  const [categoryRemarks, setCategoryRemarks] = useState<Record<string, string>>(
+    () =>
+      parseMonthlyRemarks(
+        data.notes.find((note) => note.month_start.slice(0, 7) === selectedMonth)?.note ??
+          "",
+      ).categories,
   );
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [copiesPreviousMonth, setCopiesPreviousMonth] = useState(false);
+  const [copiedAccountIds, setCopiedAccountIds] = useState<string[]>([]);
+  const [showCopyChoice, setShowCopyChoice] = useState(false);
+  const previousMonth = shiftMonth(month, -1);
+  const hasSavedValuesForMonth = data.snapshots.some(
+    (snapshot) => snapshot.captured_on.slice(0, 7) === month,
+  );
+  const hasValuesToCopy = data.snapshots.some(
+    (snapshot) => snapshot.captured_on.slice(0, 7) === previousMonth,
+  );
+  const hasManualDraftValues =
+    Object.values(drafts).some((value) => value.trim() !== "") ||
+    Object.values(marketDrafts).some((market) =>
+      Object.values(market).some((value) => value.trim() !== ""),
+    );
 
   const accounts = data.accounts.filter(
     (account) => account.class_raw === assetClass,
@@ -93,73 +123,131 @@ export function DirectHoldingsEntry({
     return snapshot ? String(Number(snapshot.value_paise) / 100) : "";
   };
 
+  const applyPreviousMonthCopy = (overwriteManualValues: boolean) => {
+    setCopiesPreviousMonth(true);
+    setMessage("");
+    const copiedValues = overwriteManualValues ? {} : { ...drafts };
+    const copiedMarkets = overwriteManualValues ? {} : { ...marketDrafts };
+    const copiedIds: string[] = [];
+    for (const account of data.accounts) {
+      if (
+        !overwriteManualValues &&
+        (copiedValues[account.id]?.trim() || exactSnapshot(account.id))
+      ) {
+        continue;
+      }
+      const snapshot = preferredSnapshotForMonth(
+        data.snapshots,
+        account.id,
+        previousMonth,
+      );
+      if (!snapshot) continue;
+      copiedValues[account.id] = String(Number(snapshot.value_paise) / 100);
+      copiedIds.push(account.id);
+      if (account.class_raw === "companyStock" || account.class_raw === "gold") {
+        copiedMarkets[account.id] = {
+          quantity: snapshot.quantity ? String(snapshot.quantity) : "",
+          unitPrice: snapshot.unit_price_paise
+            ? String(Number(snapshot.unit_price_paise) / 100)
+            : "",
+          usdRate: snapshot.usd_to_inr ? String(snapshot.usd_to_inr) : "",
+        };
+      }
+    }
+    setDrafts(copiedValues);
+    setMarketDrafts(copiedMarkets);
+    setCopiedAccountIds(copiedIds);
+    setMessage(
+      copiedIds.length
+        ? overwriteManualValues
+          ? `Replaced this month with ${copiedIds.length} balance${copiedIds.length === 1 ? "" : "s"} from ${formatMonth(previousMonth)}. Save to confirm.`
+          : `Copied ${copiedIds.length} balance${copiedIds.length === 1 ? "" : "s"} from ${formatMonth(previousMonth)}. Your current values were kept.`
+        : "Your current values were kept. There were no blank balances to copy.",
+    );
+  };
+
+  const requestPreviousMonthCopy = (enabled: boolean) => {
+    if (!enabled) {
+      const copied = new Set(copiedAccountIds);
+      setCopiesPreviousMonth(false);
+      setDrafts((current) =>
+        Object.fromEntries(
+          Object.entries(current).filter(([accountId]) => !copied.has(accountId)),
+        ),
+      );
+      setMarketDrafts((current) =>
+        Object.fromEntries(
+          Object.entries(current).filter(([accountId]) => !copied.has(accountId)),
+        ),
+      );
+      setCopiedAccountIds([]);
+      return;
+    }
+    if (hasManualDraftValues || hasSavedValuesForMonth) {
+      setShowCopyChoice(true);
+    } else {
+      applyPreviousMonthCopy(false);
+    }
+  };
+
   const saveMonth = async () => {
-    const supabase = getSupabaseClient();
-    if (!supabase) return;
+    const existingNote = data.notes.find(
+      (note) => note.month_start.slice(0, 7) === month,
+    );
+    const existingRemarks = parseMonthlyRemarks(existingNote?.note ?? "");
+    const encodedRemarks = encodeMonthlyRemarks({
+      ...existingRemarks,
+      categories: categoryRemarks,
+    });
+    const noteChanged = encodedRemarks !== (existingNote?.note ?? "");
     const changed = Object.entries(drafts).filter(
       ([, value]) => value.trim() !== "",
     );
-    if (!changed.length && remark.trim() === "") {
-      setMessage("Enter at least one value or a monthly note.");
+    if (!changed.length && !noteChanged) {
+      setMessage("Enter a holding value or a comment before saving.");
       return;
     }
 
     setSaving(true);
     setMessage("");
     try {
-      const savedSnapshots: CloudSnapshot[] = [];
+      const operations: SyncOperation[] = [];
       for (const [accountId, value] of changed) {
         const closingPaise = Math.round(Number(value) * 100);
         if (!Number.isFinite(closingPaise)) continue;
-        const rawValue = closingPaise;
         const existing = exactSnapshot(accountId);
         const market = marketDraft(accountId);
-        const payload = {
-          workspace_id: workspaceId,
-          account_id: accountId,
-          captured_on: `${month}-15`,
-          value_paise: rawValue,
-          quantity: Number(market.quantity) || 0,
-          unit_price_paise: Math.round(Number(market.unitPrice) * 100) || 0,
-          usd_to_inr: Number(market.usdRate) || 0,
-          source: "manual",
-          note: "Web monthly value",
-        };
-        const query = existing
-          ? supabase
-              .from("nw_account_snapshots")
-              .update(payload)
-              .eq("id", existing.id)
-          : supabase.from("nw_account_snapshots").insert(payload);
-        const { data: row, error } = await query
-          .select(
-            "id,account_id,captured_on,value_paise,quantity,unit_price_paise,usd_to_inr,source,note",
-          )
-          .single();
-        if (error || !row) throw new Error(error?.message ?? "A holding was not saved.");
-        savedSnapshots.push(row as CloudSnapshot);
+        operations.push({
+          entity: "snapshot",
+          action: "upsert",
+          key: existing?.id ?? crypto.randomUUID(),
+          base_revision: existing?.revision ?? 0,
+          row: {
+            account_id: accountId,
+            captured_on: `${month}-15`,
+            value_paise: closingPaise,
+            quantity: Number(market.quantity) || 0,
+            unit_price_paise: Math.round(Number(market.unitPrice) * 100) || 0,
+            usd_to_inr: Number(market.usdRate) || 0,
+            source: "manual",
+            note: "Web monthly value",
+          },
+        });
       }
 
-      let savedNote: CloudMonthlyNote | null = null;
-      const existingNote = data.notes.find(
-        (note) => note.month_start.slice(0, 7) === month,
-      );
-      if (remark.trim() !== "" || existingNote) {
-        const { data: row, error } = await supabase
-          .from("nw_monthly_notes")
-          .upsert(
-            {
-              workspace_id: workspaceId,
-              month_start: `${month}-01`,
-              note: remark.trim(),
-            },
-            { onConflict: "workspace_id,month_start" },
-          )
-          .select("month_start,note")
-          .single();
-        if (error || !row) throw new Error(error?.message ?? "The note was not saved.");
-        savedNote = row as CloudMonthlyNote;
+      if (noteChanged || existingNote) {
+        operations.push({
+          entity: "note",
+          action: "upsert",
+          key: `${month}-01`,
+          base_revision: existingNote?.revision ?? 0,
+          row: { note: encodedRemarks },
+        });
       }
+      const response = await applySyncBatch(workspaceId, operations);
+      const savedSnapshots = appliedRows<CloudSnapshot>(response, "snapshot");
+      const savedNote =
+        appliedRows<CloudMonthlyNote>(response, "note")[0] ?? null;
 
       const savedIds = new Set(savedSnapshots.map((item) => item.id));
       const savedAccounts = new Set(savedSnapshots.map((item) => item.account_id));
@@ -186,9 +274,11 @@ export function DirectHoldingsEntry({
           : data.notes,
       });
       setDrafts({});
+      setCopiesPreviousMonth(false);
+      setCopiedAccountIds([]);
       setMessage("Month saved to the cloud.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Values could not be saved.");
+      setMessage(syncErrorMessage(error, "Values could not be saved."));
     } finally {
       setSaving(false);
     }
@@ -204,6 +294,95 @@ export function DirectHoldingsEntry({
         </div>
       </section>
 
+      <label className="carry-forward-toggle">
+          <input
+            checked={copiesPreviousMonth}
+            disabled={!hasValuesToCopy}
+            onChange={(event) => requestPreviousMonthCopy(event.target.checked)}
+            type="checkbox"
+          />
+          <span>
+            <strong>Copy previous month balances</strong>
+            <small>
+              {hasValuesToCopy
+                ? `Prefills ${formatMonth(previousMonth)} values. Nothing is saved until you save this month.`
+                : `No saved balances are available for ${formatMonth(previousMonth)}.`}
+            </small>
+          </span>
+      </label>
+
+      {showCopyChoice && (
+        <div
+          className="copy-choice-backdrop"
+          role="presentation"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            display: "grid",
+            placeItems: "center",
+            padding: "1.25rem",
+            background: "rgba(18, 45, 49, 0.36)",
+            backdropFilter: "blur(3px)",
+          }}
+        >
+          <section
+            aria-labelledby="copy-choice-title"
+            aria-modal="true"
+            className="copy-choice-dialog"
+            role="dialog"
+            style={{
+              width: "min(31rem, 100%)",
+              padding: "1.5rem",
+              border: "1px solid #c9dbd5",
+              borderRadius: "1.1rem",
+              background: "#ffffff",
+              boxShadow: "0 24px 56px rgba(18, 45, 49, 0.24)",
+            }}
+          >
+            <p className="eyebrow" style={{ marginBottom: "0.45rem" }}>
+              {hasSavedValuesForMonth ? "Saved values detected" : "Unsaved values detected"}
+            </p>
+            <h2 id="copy-choice-title" style={{ margin: "0 0 0.55rem" }}>Copy previous month balances?</h2>
+            <p style={{ margin: "0 0 1.25rem" }}>
+              {hasSavedValuesForMonth
+                ? `This month already has saved values. Keep them and fill only empty accounts, or replace them with ${formatMonth(previousMonth)} balances.`
+                : `Keep what you entered and fill only empty accounts, or replace your unsaved values with ${formatMonth(previousMonth)} balances.`}
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.65rem", alignItems: "center" }}>
+              <button
+                className="secondary-button"
+                onClick={() => {
+                  setShowCopyChoice(false);
+                  applyPreviousMonthCopy(false);
+                }}
+                type="button"
+              >
+                Fill empty only
+              </button>
+              <button
+                className="small-primary-button"
+                onClick={() => {
+                  setShowCopyChoice(false);
+                  applyPreviousMonthCopy(true);
+                }}
+                style={{ background: "#c45050" }}
+                type="button"
+              >
+                Replace my entries
+              </button>
+              <button
+                className="text-button"
+                onClick={() => setShowCopyChoice(false)}
+                type="button"
+              >
+                Cancel
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       <section className="section-card">
         <div className="direct-class-tabs">
           {availableClasses.map((item) => (
@@ -217,6 +396,19 @@ export function DirectHoldingsEntry({
             </button>
           ))}
         </div>
+        <label className="class-remark">
+          <span>{classLabels[assetClass]} comment</span>
+          <input
+            placeholder={`Add one comment for all ${classLabels[assetClass].toLowerCase()} holdings`}
+            value={categoryRemarks[assetClass] ?? ""}
+            onChange={(event) =>
+              setCategoryRemarks((current) => ({
+                ...current,
+                [assetClass]: event.target.value,
+              }))
+            }
+          />
+        </label>
 
         <div className={`direct-holding-list ${assetClass === "companyStock" ? "market-holdings" : ""}`}>
           <div className="direct-row-heading">
@@ -224,7 +416,7 @@ export function DirectHoldingsEntry({
             {assetClass === "companyStock" && <span>Shares</span>}
             {assetClass === "companyStock" && <span>USD price</span>}
             {assetClass === "companyStock" && <span>USD to INR</span>}
-            <span>Closing balance</span>
+            <span>Total</span>
           </div>
           {accounts.map((account) => (
             <label className="direct-holding-row" key={account.id}>
@@ -276,15 +468,6 @@ export function DirectHoldingsEntry({
             </label>
           ))}
         </div>
-
-        <label className="direct-remark">
-          <span>Monthly remarks</span>
-          <textarea
-            placeholder="Optional note for this month"
-            value={remark}
-            onChange={(event) => setRemark(event.target.value)}
-          />
-        </label>
 
         <div className="direct-save-bar">
           {message && (
@@ -389,69 +572,87 @@ export function DirectAccountBookEntry({
       setMessage("Select an account and complete at least one row.");
       return;
     }
-    const supabase = getSupabaseClient();
-    if (!supabase) return;
     setSaving(true);
     setMessage("");
     try {
-      const payload = valid.map((draft) => ({
-        workspace_id: workspaceId,
-        account_id: accountId,
-        entry_date: date,
-        description: draft.description.trim(),
-        comment: draft.comment.trim(),
-        direction: draft.direction,
-        amount_paise: calculatedAmount(draft, selectedAccount?.class_raw),
-        quantity: number(draft.quantity),
-        unit_price_paise: Math.round(number(draft.unitPrice) * 100),
-        usd_to_inr: number(draft.usdRate),
-      }));
-      const { data: rows, error } = await supabase
-        .from("nw_account_entries")
-        .insert(payload)
-        .select(
-          "id,account_id,entry_date,description,comment,direction,amount_paise,quantity,unit_price_paise,usd_to_inr",
-        );
-      if (error || !rows) throw new Error(error?.message ?? "Entries were not saved.");
-      const savedEntries = rows as CloudEntry[];
       const month = date.slice(0, 7);
       const previousMonth = shiftMonth(month, -1);
       const opening = preferredSnapshotForMonth(data.snapshots, accountId, previousMonth);
-      const currentEntries = [...data.entries, ...savedEntries].filter(
+      const currentEntries = data.entries.filter(
         (entry) =>
           entry.account_id === accountId && entry.entry_date.slice(0, 7) === month,
       );
       const direction = (entry: CloudEntry) => entry.direction === "increase" ? 1 : -1;
-      const closingPaise = Number(opening?.value_paise ?? 0) + currentEntries.reduce(
-        (total, entry) => total + direction(entry) * Number(entry.amount_paise),
-        0,
-      );
-      const closingQuantity = Number(opening?.quantity ?? 0) + currentEntries.reduce(
-        (total, entry) => total + direction(entry) * Number(entry.quantity),
-        0,
-      );
+      const draftDirection = (draft: EntryDraft) =>
+        draft.direction === "increase" ? 1 : -1;
+      const closingPaise =
+        Number(opening?.value_paise ?? 0) +
+        currentEntries.reduce(
+          (total, entry) => total + direction(entry) * Number(entry.amount_paise),
+          0,
+        ) +
+        valid.reduce(
+          (total, draft) =>
+            total +
+            draftDirection(draft) *
+              calculatedAmount(draft, selectedAccount?.class_raw),
+          0,
+        );
+      const closingQuantity =
+        Number(opening?.quantity ?? 0) +
+        currentEntries.reduce(
+          (total, entry) => total + direction(entry) * Number(entry.quantity),
+          0,
+        ) +
+        valid.reduce(
+          (total, draft) =>
+            total + draftDirection(draft) * number(draft.quantity),
+          0,
+        );
       const currentSnapshot = preferredSnapshotForMonth(data.snapshots, accountId, month);
-      const snapshotPayload = {
-        workspace_id: workspaceId,
-        account_id: accountId,
-        captured_on: `${month}-15`,
-        value_paise: closingPaise,
-        quantity: closingQuantity,
-        unit_price_paise: currentSnapshot?.unit_price_paise ?? opening?.unit_price_paise ?? 0,
-        usd_to_inr: currentSnapshot?.usd_to_inr ?? opening?.usd_to_inr ?? 0,
-        source: "manual",
-        note: "Account Book calculated",
-      };
-      const snapshotQuery = currentSnapshot
-        ? supabase.from("nw_account_snapshots").update(snapshotPayload).eq("id", currentSnapshot.id)
-        : supabase.from("nw_account_snapshots").insert(snapshotPayload);
-      const { data: snapshotRow, error: snapshotError } = await snapshotQuery
-        .select("id,account_id,captured_on,value_paise,quantity,unit_price_paise,usd_to_inr,source,note")
-        .single();
-      if (snapshotError || !snapshotRow) {
-        throw new Error(snapshotError?.message ?? "The closing holding was not saved.");
-      }
-      const savedSnapshot = snapshotRow as CloudSnapshot;
+      const entryOperations: SyncOperation[] = valid.map((draft) => ({
+        entity: "entry",
+        action: "upsert",
+        key: crypto.randomUUID(),
+        base_revision: 0,
+        row: {
+          account_id: accountId,
+          entry_date: date,
+          description: draft.description.trim(),
+          comment: draft.comment.trim(),
+          direction: draft.direction,
+          amount_paise: calculatedAmount(draft, selectedAccount?.class_raw),
+          quantity: number(draft.quantity),
+          unit_price_paise: Math.round(number(draft.unitPrice) * 100),
+          usd_to_inr: number(draft.usdRate),
+        },
+      }));
+      const response = await applySyncBatch(workspaceId, [
+        ...entryOperations,
+        {
+          entity: "snapshot",
+          action: "upsert",
+          key: currentSnapshot?.id ?? crypto.randomUUID(),
+          base_revision: currentSnapshot?.revision ?? 0,
+          row: {
+            account_id: accountId,
+            captured_on: `${month}-15`,
+            value_paise: closingPaise,
+            quantity: closingQuantity,
+            unit_price_paise:
+              currentSnapshot?.unit_price_paise ??
+              opening?.unit_price_paise ??
+              0,
+            usd_to_inr:
+              currentSnapshot?.usd_to_inr ?? opening?.usd_to_inr ?? 0,
+            source: "manual",
+            note: "Account Book calculated",
+          },
+        },
+      ]);
+      const savedEntries = appliedRows<CloudEntry>(response, "entry");
+      const savedSnapshot = appliedRows<CloudSnapshot>(response, "snapshot")[0];
+      if (!savedSnapshot) throw new Error("The closing holding was not saved.");
       onDataChange({
         ...data,
         entries: [...data.entries, ...savedEntries],
@@ -465,9 +666,11 @@ export function DirectAccountBookEntry({
         ],
       });
       setDrafts([newDraft()]);
-      setMessage(`${rows.length} ${rows.length === 1 ? "entry" : "entries"} saved.`);
+      setMessage(
+        `${savedEntries.length} ${savedEntries.length === 1 ? "entry" : "entries"} saved.`,
+      );
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Entries could not be saved.");
+      setMessage(syncErrorMessage(error, "Entries could not be saved."));
     } finally {
       setSaving(false);
     }
@@ -641,13 +844,6 @@ function preferredSnapshotForMonth(
         snapshot.account_id === accountId && snapshot.captured_on.slice(0, 7) === month,
     )
     .sort(preferredSnapshotOrder)[0];
-}
-
-function preferredSnapshotOrder(a: CloudSnapshot, b: CloudSnapshot) {
-  const aIsCalculated = a.note === "Account Book calculated";
-  const bIsCalculated = b.note === "Account Book calculated";
-  if (aIsCalculated !== bIsCalculated) return aIsCalculated ? 1 : -1;
-  return b.captured_on.localeCompare(a.captured_on);
 }
 
 function shiftMonth(month: string, amount: number) {

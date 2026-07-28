@@ -18,6 +18,7 @@ export type AssetClass =
 
 export type CloudAccount = {
   id: string;
+  revision: number;
   name: string;
   class_raw: AssetClass;
   notes: string;
@@ -28,6 +29,7 @@ export type CloudAccount = {
 
 export type CloudSnapshot = {
   id: string;
+  revision: number;
   account_id: string;
   captured_on: string;
   value_paise: number;
@@ -40,6 +42,7 @@ export type CloudSnapshot = {
 
 export type CloudEntry = {
   id: string;
+  revision: number;
   account_id: string;
   entry_date: string;
   description: string;
@@ -53,6 +56,7 @@ export type CloudEntry = {
 
 export type CloudMonthlyNote = {
   month_start: string;
+  revision: number;
   note: string;
 };
 

@@ -13,7 +13,14 @@ import {
   X,
 } from "lucide-react";
 import { classLabels, formatINR, formatMonth } from "@/lib/tracker";
-import { getSupabaseClient } from "@/lib/supabase/client";
+import { encodeMonthlyRemarks, parseMonthlyRemarks } from "@/lib/monthlyRemarks";
+import {
+  appliedRows,
+  applySyncBatch,
+  syncErrorMessage,
+  type SyncEntity,
+} from "@/lib/syncMutations";
+import { syncRecoveryMode } from "@/lib/syncMode";
 import type {
   AssetClass,
   CloudAccount,
@@ -63,26 +70,27 @@ export function CloudDataManager({
   );
 
   const remove = async (
-    table: string,
-    idColumn: string,
+    entity: SyncEntity,
     id: string,
+    revision: number,
     label: string,
     apply: () => TrackerData,
   ) => {
     if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return;
     setError("");
-    const supabase = getSupabaseClient();
-    if (!supabase) return;
-    const { error: deleteError } = await supabase
-      .from(table)
-      .delete()
-      .eq(idColumn, id)
-      .eq("workspace_id", workspaceId);
-    if (deleteError) {
-      setError(deleteError.message);
-      return;
+    try {
+      await applySyncBatch(workspaceId, [
+        {
+          entity,
+          action: "delete",
+          key: id,
+          base_revision: revision,
+        },
+      ]);
+      onDataChange(apply());
+    } catch (deleteError) {
+      setError(syncErrorMessage(deleteError, `${label} could not be deleted.`));
     }
-    onDataChange(apply());
   };
 
   const tabs: Array<{ id: ManagerTab; label: string; icon: typeof Landmark }> = [
@@ -103,7 +111,9 @@ export function CloudDataManager({
             the Mac app on its next launch or two-way sync.
           </p>
         </div>
-        <span className="live-badge">Two-way sync active</span>
+        <span className="live-badge">
+          {syncRecoveryMode ? "Web editing protected" : "Two-way sync active"}
+        </span>
       </section>
 
       <section className="section-card">
@@ -144,9 +154,9 @@ export function CloudDataManager({
                 edit={() => setEditor({ kind: "account", value: account })}
                 remove={() =>
                   void remove(
-                    "nw_accounts",
-                    "id",
+                    "account",
                     account.id,
+                    account.revision,
                     account.name,
                     () => ({
                       ...data,
@@ -182,9 +192,9 @@ export function CloudDataManager({
                   edit={() => setEditor({ kind: "snapshot", value: snapshot })}
                   remove={() =>
                     void remove(
-                      "nw_account_snapshots",
-                      "id",
+                      "snapshot",
                       snapshot.id,
+                      snapshot.revision,
                       "this holding value",
                       () => ({
                         ...data,
@@ -216,9 +226,9 @@ export function CloudDataManager({
                   edit={() => setEditor({ kind: "entry", value: entry })}
                   remove={() =>
                     void remove(
-                      "nw_account_entries",
-                      "id",
+                      "entry",
                       entry.id,
+                      entry.revision,
                       "this Account Book entry",
                       () => ({
                         ...data,
@@ -245,13 +255,13 @@ export function CloudDataManager({
                 <ManagerRow
                   key={note.month_start}
                   title={formatMonth(note.month_start.slice(0, 7))}
-                  subtitle={note.note || "Blank note"}
+                  subtitle={parseMonthlyRemarks(note.note).overall || "Blank note"}
                   edit={() => setEditor({ kind: "note", value: note })}
                   remove={() =>
                     void remove(
-                      "nw_monthly_notes",
-                      "month_start",
+                      "note",
                       note.month_start,
+                      note.revision,
                       "this monthly note",
                       () => ({
                         ...data,
@@ -286,11 +296,7 @@ export function CloudDataManager({
               onDataChange(next);
               setEditor(null);
             } catch (saveError) {
-              setError(
-                saveError instanceof Error
-                  ? saveError.message
-                  : "The change could not be saved.",
-              );
+              setError(syncErrorMessage(saveError, "The change could not be saved."));
             } finally {
               setSaving(false);
             }
@@ -558,7 +564,7 @@ function initialValues(
     case "note":
       return {
         month: editor.value?.month_start.slice(0, 7) ?? today.slice(0, 7),
-        note: editor.value?.note ?? "",
+        note: parseMonthlyRemarks(editor.value?.note ?? "").overall,
       };
   }
 }
@@ -580,27 +586,25 @@ async function saveEditor(
   editor: Exclude<Editor, null>,
   values: EditorValues,
 ): Promise<TrackerData> {
-  const supabase = getSupabaseClient();
-  if (!supabase) throw new Error("Cloud connection is unavailable.");
-
   if (editor.kind === "account") {
-    const payload = {
-      workspace_id: workspaceId,
-      name: values.name.trim(),
-      class_raw: values.class_raw,
-      notes: values.notes.trim(),
-      ticker_symbol: values.ticker_symbol.trim(),
-      broker_name: values.broker_name.trim(),
-      sort_order: editor.value?.sort_order ?? data.accounts.length,
-    };
-    const query = editor.value
-      ? supabase.from("nw_accounts").update(payload).eq("id", editor.value.id)
-      : supabase.from("nw_accounts").insert(payload);
-    const { data: row, error } = await query
-      .select("id,name,class_raw,notes,ticker_symbol,broker_name,sort_order")
-      .single();
-    if (error || !row) throw new Error(error?.message ?? "Account was not saved.");
-    const account = row as CloudAccount;
+    const response = await applySyncBatch(workspaceId, [
+      {
+        entity: "account",
+        action: "upsert",
+        key: editor.value?.id ?? crypto.randomUUID(),
+        base_revision: editor.value?.revision ?? 0,
+        row: {
+          name: values.name.trim(),
+          class_raw: values.class_raw,
+          notes: values.notes.trim(),
+          ticker_symbol: values.ticker_symbol.trim(),
+          broker_name: values.broker_name.trim(),
+          sort_order: editor.value?.sort_order ?? data.accounts.length,
+        },
+      },
+    ]);
+    const account = appliedRows<CloudAccount>(response, "account")[0];
+    if (!account) throw new Error("Account was not saved.");
     return {
       ...data,
       accounts: editor.value
@@ -610,25 +614,26 @@ async function saveEditor(
   }
 
   if (editor.kind === "snapshot") {
-    const payload = {
-      workspace_id: workspaceId,
-      account_id: values.account_id,
-      captured_on: values.captured_on,
-      value_paise: paise(values.value),
-      quantity: number(values.quantity),
-      unit_price_paise: paise(values.unit_price),
-      usd_to_inr: number(values.usd_to_inr),
-      source: "manual",
-      note: values.note.trim(),
-    };
-    const query = editor.value
-      ? supabase.from("nw_account_snapshots").update(payload).eq("id", editor.value.id)
-      : supabase.from("nw_account_snapshots").insert(payload);
-    const { data: row, error } = await query
-      .select("id,account_id,captured_on,value_paise,quantity,unit_price_paise,usd_to_inr,source,note")
-      .single();
-    if (error || !row) throw new Error(error?.message ?? "Holding value was not saved.");
-    const snapshot = row as CloudSnapshot;
+    const response = await applySyncBatch(workspaceId, [
+      {
+        entity: "snapshot",
+        action: "upsert",
+        key: editor.value?.id ?? crypto.randomUUID(),
+        base_revision: editor.value?.revision ?? 0,
+        row: {
+          account_id: values.account_id,
+          captured_on: values.captured_on,
+          value_paise: paise(values.value),
+          quantity: number(values.quantity),
+          unit_price_paise: paise(values.unit_price),
+          usd_to_inr: number(values.usd_to_inr),
+          source: "manual",
+          note: values.note.trim(),
+        },
+      },
+    ]);
+    const snapshot = appliedRows<CloudSnapshot>(response, "snapshot")[0];
+    if (!snapshot) throw new Error("Holding value was not saved.");
     return {
       ...data,
       snapshots: editor.value
@@ -638,26 +643,27 @@ async function saveEditor(
   }
 
   if (editor.kind === "entry") {
-    const payload = {
-      workspace_id: workspaceId,
-      account_id: values.account_id,
-      entry_date: values.entry_date,
-      description: values.description.trim(),
-      comment: values.comment.trim(),
-      direction: values.direction,
-      amount_paise: paise(values.amount),
-      quantity: number(values.quantity),
-      unit_price_paise: paise(values.unit_price),
-      usd_to_inr: number(values.usd_to_inr),
-    };
-    const query = editor.value
-      ? supabase.from("nw_account_entries").update(payload).eq("id", editor.value.id)
-      : supabase.from("nw_account_entries").insert(payload);
-    const { data: row, error } = await query
-      .select("id,account_id,entry_date,description,comment,direction,amount_paise,quantity,unit_price_paise,usd_to_inr")
-      .single();
-    if (error || !row) throw new Error(error?.message ?? "Entry was not saved.");
-    const entry = row as CloudEntry;
+    const response = await applySyncBatch(workspaceId, [
+      {
+        entity: "entry",
+        action: "upsert",
+        key: editor.value?.id ?? crypto.randomUUID(),
+        base_revision: editor.value?.revision ?? 0,
+        row: {
+          account_id: values.account_id,
+          entry_date: values.entry_date,
+          description: values.description.trim(),
+          comment: values.comment.trim(),
+          direction: values.direction,
+          amount_paise: paise(values.amount),
+          quantity: number(values.quantity),
+          unit_price_paise: paise(values.unit_price),
+          usd_to_inr: number(values.usd_to_inr),
+        },
+      },
+    ]);
+    const entry = appliedRows<CloudEntry>(response, "entry")[0];
+    if (!entry) throw new Error("Entry was not saved.");
     return {
       ...data,
       entries: editor.value
@@ -667,18 +673,36 @@ async function saveEditor(
   }
 
   const monthStart = `${values.month}-01`;
-  const payload = {
-    workspace_id: workspaceId,
-    month_start: monthStart,
-    note: values.note.trim(),
-  };
-  const { data: row, error } = await supabase
-    .from("nw_monthly_notes")
-    .upsert(payload, { onConflict: "workspace_id,month_start" })
-    .select("month_start,note")
-    .single();
-  if (error || !row) throw new Error(error?.message ?? "Monthly note was not saved.");
-  const note = row as CloudMonthlyNote;
+  const existingMonthlyNote = editor.value ??
+    data.notes.find((note) => note.month_start === monthStart);
+  const existingRemarks = parseMonthlyRemarks(existingMonthlyNote?.note ?? "");
+  const movedToAnotherMonth =
+    editor.value && editor.value.month_start !== monthStart;
+  const response = await applySyncBatch(workspaceId, [
+    ...(movedToAnotherMonth
+      ? [
+          {
+            entity: "note" as const,
+            action: "delete" as const,
+            key: editor.value!.month_start,
+            base_revision: editor.value!.revision,
+          },
+        ]
+      : []),
+    {
+      entity: "note",
+      action: "upsert",
+      key: monthStart,
+      base_revision: movedToAnotherMonth
+        ? data.notes.find((note) => note.month_start === monthStart)?.revision ?? 0
+        : existingMonthlyNote?.revision ?? 0,
+      row: {
+        note: encodeMonthlyRemarks({ ...existingRemarks, overall: values.note }),
+      },
+    },
+  ]);
+  const note = appliedRows<CloudMonthlyNote>(response, "note")[0];
+  if (!note) throw new Error("Monthly note was not saved.");
   return {
     ...data,
     notes: [

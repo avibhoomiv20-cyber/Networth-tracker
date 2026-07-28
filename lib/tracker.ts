@@ -1,8 +1,10 @@
 import type {
   AssetClass,
   CloudAccount,
+  CloudSnapshot,
   TrackerData,
 } from "@/lib/types";
+import { parseMonthlyRemarks } from "@/lib/monthlyRemarks";
 
 export const classOrder: AssetClass[] = [
   "cash",
@@ -39,6 +41,23 @@ export type MonthlyRow = {
   note: string;
 };
 
+export function preferredSnapshotOrder(a: CloudSnapshot, b: CloudSnapshot) {
+  const aIsCalculated = a.note === "Account Book calculated";
+  const bIsCalculated = b.note === "Account Book calculated";
+  if (aIsCalculated !== bIsCalculated) return aIsCalculated ? 1 : -1;
+
+  const dateOrder = b.captured_on.localeCompare(a.captured_on);
+  if (dateOrder !== 0) return dateOrder;
+
+  const aIsWorkbookImport = a.note === "Workbook import";
+  const bIsWorkbookImport = b.note === "Workbook import";
+  if (aIsWorkbookImport !== bIsWorkbookImport) {
+    return aIsWorkbookImport ? 1 : -1;
+  }
+
+  return b.revision - a.revision;
+}
+
 const emptyTotals = (): Record<AssetClass, number> => ({
   cash: 0,
   bank: 0,
@@ -66,13 +85,7 @@ export function buildMonthlyRows(data: TrackerData): MonthlyRow[] {
     const monthId = snapshot.captured_on.slice(0, 7);
     const key = `${snapshot.account_id}|${monthId}`;
     const existing = snapshots.get(key);
-    const snapshotIsCalculated = snapshot.note === "Account Book calculated";
-    const existingIsCalculated = existing?.note === "Account Book calculated";
-    if (
-      !existing ||
-      (existingIsCalculated && !snapshotIsCalculated) ||
-      (snapshotIsCalculated === existingIsCalculated && snapshot.captured_on >= existing.captured_on)
-    ) {
+    if (!existing || preferredSnapshotOrder(snapshot, existing) < 0) {
       snapshots.set(key, snapshot);
     }
   }
@@ -86,7 +99,10 @@ export function buildMonthlyRows(data: TrackerData): MonthlyRow[] {
   }
 
   const notes = new Map(
-    data.notes.map((item) => [item.month_start.slice(0, 7), item.note]),
+    data.notes.map((item) => [
+      item.month_start.slice(0, 7),
+      parseMonthlyRemarks(item.note).overall,
+    ]),
   );
   const byMonth = new Map<string, MonthlyRow>();
 
@@ -103,23 +119,19 @@ export function buildMonthlyRows(data: TrackerData): MonthlyRow[] {
   }
 
   for (const account of data.accounts) {
-    let carriedValue: number | null = null;
-
     for (const monthId of monthIds) {
       const snapshot = snapshots.get(`${account.id}|${monthId}`);
       const movement = deltas.get(`${account.id}|${monthId}`) ?? 0;
-      if (snapshot) {
-        carriedValue = Number(snapshot.value_paise);
-      } else if (carriedValue !== null) {
-        carriedValue += movement;
-      } else if (movement !== 0) {
-        carriedValue = movement;
-      }
-      if (carriedValue === null) continue;
       const row = byMonth.get(monthId);
       if (!row) continue;
-      row.byAccount[account.id] = carriedValue;
-      row.byClass[account.class_raw] += carriedValue;
+      if (snapshot) {
+        const value = Number(snapshot.value_paise);
+        row.byAccount[account.id] = value;
+        row.byClass[account.class_raw] += value;
+      } else if (movement !== 0) {
+        row.byAccount[account.id] = movement;
+        row.byClass[account.class_raw] += movement;
+      }
     }
   }
 
