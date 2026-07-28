@@ -27,7 +27,7 @@ analysis is served by the authenticated Supabase Edge Function in
 `../supabase/functions/networth-ai-chat`. Configure it once in Supabase:
 
 ```bash
-supabase secrets set GEMINI_API_KEY=your-server-side-key GEMINI_MODEL=gemini-2.5-flash-lite
+supabase secrets set GEMINI_API_KEY=your-server-side-key GEMINI_MODEL=gemini-3.5-flash-lite
 supabase functions deploy networth-ai-chat
 ```
 
