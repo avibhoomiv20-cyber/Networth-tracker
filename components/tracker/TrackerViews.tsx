@@ -7,6 +7,7 @@ import {
   ArrowUpRight,
   TrendingUp,
 } from "lucide-react";
+import { InsightsView } from "@/components/insights/InsightsView";
 import { CloudDataManager } from "@/components/tracker/CloudDataManager";
 import {
   DirectAccountBookEntry,
@@ -39,6 +40,7 @@ type TrackerViewsProps = {
   workspaceId: string;
   data: TrackerData;
   selectedMonth: string;
+  refreshedAt: Date | null;
   onDataChange: (data: TrackerData) => void;
 };
 
@@ -59,6 +61,7 @@ export function TrackerViews({
   workspaceId,
   data,
   selectedMonth,
+  refreshedAt,
   onDataChange,
 }: TrackerViewsProps) {
   const rows = useMemo(() => buildMonthlyRows(data), [data]);
@@ -73,6 +76,16 @@ export function TrackerViews({
           onDataChange={onDataChange}
           rows={rows}
           selectedMonth={selectedMonth}
+        />
+      );
+      break;
+    case "insights":
+      content = (
+        <InsightsView
+          workspaceId={workspaceId}
+          data={data}
+          selectedMonth={selectedMonth}
+          refreshedAt={refreshedAt}
         />
       );
       break;
@@ -147,6 +160,7 @@ function SummaryView({
   rows: ReturnType<typeof buildMonthlyRows>;
   selectedMonth: string;
 }) {
+  const [showEmptyClasses, setShowEmptyClasses] = useState(false);
   const currentIndex = rows.findIndex((row) => row.monthId === selectedMonth);
   const current = rows[currentIndex];
   const previous = currentIndex > 0 ? rows[currentIndex - 1] : undefined;
@@ -168,6 +182,9 @@ function SummaryView({
   const min = Math.min(...trendValues);
   const max = Math.max(...trendValues);
   const range = Math.max(max - min, 1);
+  const visibleCardClasses = showEmptyClasses
+    ? cardClasses
+    : cardClasses.filter((assetClass) => current.byClass[assetClass] !== 0);
 
   return (
     <div className="tracker-stack">
@@ -192,24 +209,22 @@ function SummaryView({
         {current.note && <p className="month-note">{parseMonthlyRemarks(current.note).overall}</p>}
       </section>
 
-      <SummaryRemarksEditor
-        key={`${selectedMonth}-${data.notes.find((note) => note.month_start.slice(0, 7) === selectedMonth)?.note ?? ""}`}
-        workspaceId={workspaceId}
-        data={data}
-        selectedMonth={selectedMonth}
-        onDataChange={onDataChange}
-      />
-
       <section className="section-card">
         <div className="card-heading">
           <div>
             <p className="eyebrow">Current composition</p>
             <h3>Everything in one view</h3>
           </div>
-          <span>{formatMonth(current.monthId)}</span>
+          <button
+            className="text-button"
+            onClick={() => setShowEmptyClasses((value) => !value)}
+            type="button"
+          >
+            {showEmptyClasses ? "Hide empty categories" : "View all categories"}
+          </button>
         </div>
         <div className="asset-card-grid">
-          {cardClasses.map((assetClass) => (
+          {visibleCardClasses.map((assetClass) => (
             <article className={`asset-card tone-${assetClass}`} key={assetClass}>
               <span>{classLabels[assetClass]}</span>
               <strong>{formatINR(current.byClass[assetClass])}</strong>
@@ -243,6 +258,14 @@ function SummaryView({
       </section>
 
       <MonthlyTable rows={rows} />
+
+      <SummaryRemarksEditor
+        key={`${selectedMonth}-${data.notes.find((note) => note.month_start.slice(0, 7) === selectedMonth)?.note ?? ""}`}
+        workspaceId={workspaceId}
+        data={data}
+        selectedMonth={selectedMonth}
+        onDataChange={onDataChange}
+      />
     </div>
   );
 }

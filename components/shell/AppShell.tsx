@@ -14,6 +14,7 @@ import {
   NotebookTabs,
   RefreshCw,
   Settings2,
+  Sparkles,
   SlidersHorizontal,
 } from "lucide-react";
 import { GettingStarted } from "@/components/onboarding/GettingStarted";
@@ -33,6 +34,7 @@ type AppShellProps = {
   trackerData: TrackerData | null;
   setupError: string;
   refreshing: boolean;
+  refreshedAt: Date | null;
   onRefresh: () => void;
 };
 
@@ -41,18 +43,23 @@ const sections: Array<{
   label: string;
   icon: typeof LayoutDashboard;
 }> = [
-  { id: "summary", label: "Summary", icon: LayoutDashboard },
+  { id: "summary", label: "Overview", icon: LayoutDashboard },
+  { id: "insights", label: "Insights", icon: Sparkles },
   { id: "holdings", label: "Holdings", icon: SlidersHorizontal },
   { id: "account-book", label: "Account Book", icon: BookOpenText },
   { id: "ledger", label: "Ledger", icon: NotebookTabs },
   { id: "history", label: "History", icon: Clock3 },
-  { id: "setup", label: "Account Setup", icon: Settings2 },
+  { id: "setup", label: "Settings", icon: Settings2 },
 ];
 
 const sectionCopy: Record<AppSection, { title: string; description: string }> = {
   summary: {
-    title: "Summary",
+    title: "Overview",
     description: "Your complete financial picture, month by month.",
+  },
+  insights: {
+    title: "Insights",
+    description: "Understand what changed and explore your live financial data.",
   },
   holdings: {
     title: "Holdings",
@@ -71,10 +78,18 @@ const sectionCopy: Record<AppSection, { title: string; description: string }> = 
     description: "Follow the changes behind your net-worth trend.",
   },
   setup: {
-    title: "Account Setup",
+    title: "Settings",
     description: "Create and organise the accounts used by your tracker.",
   },
 };
+
+const sectionIds = new Set<AppSection>(sections.map((section) => section.id));
+
+function sectionFromLocation(): AppSection {
+  if (typeof window === "undefined") return "summary";
+  const value = window.location.hash.replace("#", "") as AppSection;
+  return sectionIds.has(value) ? value : "summary";
+}
 
 export function AppShell({
   session,
@@ -82,9 +97,11 @@ export function AppShell({
   trackerData,
   setupError,
   refreshing,
+  refreshedAt,
   onRefresh,
 }: AppShellProps) {
-  const [activeSection, setActiveSection] = useState<AppSection>("summary");
+  const [activeSection, setActiveSection] =
+    useState<AppSection>(sectionFromLocation);
   const [currentData, setCurrentData] = useState(trackerData);
   const [selectedMonth, setSelectedMonth] = useState("");
   const email = session.user.email ?? "Signed-in user";
@@ -93,13 +110,31 @@ export function AppShell({
   const isNewWorkspace =
     (currentData?.accounts.length ?? workspace?.accountCount ?? 0) === 0;
   const activeMonth = selectedMonth || currentLocalMonth();
-  const usesMonthlyView = ["summary", "holdings", "account-book"].includes(
-    activeSection,
-  );
+  const usesMonthlyView = [
+    "summary",
+    "insights",
+    "holdings",
+    "account-book",
+  ].includes(activeSection);
 
   useEffect(() => {
     setCurrentData(trackerData);
   }, [trackerData]);
+
+  useEffect(() => {
+    const syncSection = () => setActiveSection(sectionFromLocation());
+    window.addEventListener("hashchange", syncSection);
+    window.addEventListener("popstate", syncSection);
+    return () => {
+      window.removeEventListener("hashchange", syncSection);
+      window.removeEventListener("popstate", syncSection);
+    };
+  }, []);
+
+  const navigateSection = (section: AppSection) => {
+    setActiveSection(section);
+    window.history.pushState(null, "", `#${section}`);
+  };
 
   const signOut = async () => {
     await getSupabaseClient()?.auth.signOut();
@@ -117,7 +152,7 @@ export function AppShell({
         <button
           className={activeSection === id ? "active" : ""}
           key={id}
-          onClick={() => setActiveSection(id)}
+          onClick={() => navigateSection(id)}
           aria-current={activeSection === id ? "page" : undefined}
           type="button"
         >
@@ -197,9 +232,20 @@ export function AppShell({
               />
               <span>{refreshing ? "Refreshing…" : "Refresh data"}</span>
             </button>
-            <span className="status-pill">
+            <span
+              className="status-pill"
+              title={
+                refreshedAt
+                  ? `Data refreshed ${refreshedAt.toLocaleString("en-IN")}`
+                  : undefined
+              }
+            >
               <span className="status-dot" />{" "}
-              {syncRecoveryMode ? "Read-only recovery" : "Synced workspace"}
+              {syncRecoveryMode
+                ? "Read-only recovery"
+                : refreshedAt
+                  ? `Refreshed ${formatRelativeRefresh(refreshedAt)}`
+                  : "Synced workspace"}
             </span>
           </div>
         </header>
@@ -219,6 +265,7 @@ export function AppShell({
             workspaceId={workspace.id}
             data={currentData}
             selectedMonth={activeMonth}
+            refreshedAt={refreshedAt}
             onDataChange={setCurrentData}
           />
         ) : (
@@ -256,4 +303,17 @@ function formatLongMonth(month: string) {
 function currentLocalMonth() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function formatRelativeRefresh(date: Date) {
+  const minutes = Math.max(
+    0,
+    Math.round((Date.now() - date.getTime()) / 60_000),
+  );
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  return date.toLocaleTimeString("en-IN", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }

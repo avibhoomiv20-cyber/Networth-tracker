@@ -23,10 +23,10 @@ export const metadata: Metadata = {
     type: "website",
     images: [
       {
-        url: "/networth-social.png",
+        url: "/og.png",
         width: 1200,
         height: 630,
-        alt: "A calm light-theme financial dashboard and net-worth trend",
+        alt: "NetWorth Tracker dashboard with financial insights and an AI assistant",
       },
     ],
   },
@@ -35,7 +35,7 @@ export const metadata: Metadata = {
     title: "NetWorth Tracker",
     description:
       "See your complete financial picture in one calm, private workspace.",
-    images: ["/networth-social.png"],
+    images: ["/og.png"],
   },
 };
 

@@ -69,8 +69,30 @@ export type TrackerData = {
 
 export type AppSection =
   | "summary"
+  | "insights"
   | "holdings"
   | "account-book"
   | "ledger"
   | "history"
   | "setup";
+
+export type InsightTone = "attention" | "change" | "opportunity" | "progress";
+
+export type FinancialInsight = {
+  id: string;
+  tone: InsightTone;
+  eyebrow: string;
+  title: string;
+  summary: string;
+  impact: string;
+  why: string;
+  source: string;
+  question: string;
+};
+
+export type AIChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+};

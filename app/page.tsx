@@ -24,6 +24,7 @@ export default function Home() {
   const [trackerData, setTrackerData] = useState<TrackerData | null>(null);
   const [loading, setLoading] = useState(isSupabaseConfigured);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshedAt, setRefreshedAt] = useState<Date | null>(null);
   const [setupError, setSetupError] = useState("");
   const refreshWorkspaceRef = useRef<(() => Promise<void>) | null>(null);
 
@@ -142,6 +143,7 @@ export default function Home() {
           entries: (entryResult.data ?? []) as CloudEntry[],
           notes: (noteResult.data ?? []) as CloudMonthlyNote[],
         });
+        setRefreshedAt(new Date());
       }
 
       setLoading(false);
@@ -243,6 +245,7 @@ export default function Home() {
       trackerData={trackerData}
       setupError={setupError}
       refreshing={refreshing}
+      refreshedAt={refreshedAt}
       onRefresh={refreshFromCloud}
     />
   );
