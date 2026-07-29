@@ -37,6 +37,7 @@ import type {
 
 type TrackerViewsProps = {
   section: AppSection;
+  userId: string;
   workspaceId: string;
   data: TrackerData;
   selectedMonth: string;
@@ -58,6 +59,7 @@ const cardClasses: AssetClass[] = [
 
 export function TrackerViews({
   section,
+  userId,
   workspaceId,
   data,
   selectedMonth,
@@ -82,6 +84,7 @@ export function TrackerViews({
     case "insights":
       content = (
         <InsightsView
+          userId={userId}
           workspaceId={workspaceId}
           data={data}
           selectedMonth={selectedMonth}
@@ -389,6 +392,9 @@ function MonthlyTable({
   expanded?: boolean;
 }) {
   const visible = expanded ? [...rows].reverse() : [...rows].reverse().slice(0, 12);
+  const activeClasses = classOrder.filter((assetClass) =>
+    rows.some((row) => row.byClass[assetClass] !== 0),
+  );
   return (
     <section className="section-card">
       <div className="card-heading">
@@ -403,7 +409,7 @@ function MonthlyTable({
           <thead>
             <tr>
               <th>Month</th>
-              {classOrder.map((assetClass) => (
+              {activeClasses.map((assetClass) => (
                 <th key={assetClass}>{classLabels[assetClass]}</th>
               ))}
               <th>Net worth</th>
@@ -413,7 +419,7 @@ function MonthlyTable({
             {visible.map((row) => (
               <tr key={row.monthId}>
                 <td><strong>{formatMonth(row.monthId)}</strong></td>
-                {classOrder.map((assetClass) => (
+                {activeClasses.map((assetClass) => (
                   <td
                     className={assetClass === "liability" ? "debt-cell" : ""}
                     key={assetClass}

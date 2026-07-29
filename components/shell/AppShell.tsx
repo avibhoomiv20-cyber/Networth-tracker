@@ -262,6 +262,7 @@ export function AppShell({
         ) : currentData && workspace ? (
           <TrackerViews
             section={activeSection}
+            userId={session.user.id}
             workspaceId={workspace.id}
             data={currentData}
             selectedMonth={activeMonth}

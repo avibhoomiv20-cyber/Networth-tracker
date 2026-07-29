@@ -25,6 +25,7 @@ import type {
 } from "@/lib/types";
 
 type InsightsViewProps = {
+  userId: string;
   workspaceId: string;
   data: TrackerData;
   selectedMonth: string;
@@ -44,6 +45,7 @@ const suggestedQuestions = [
 ];
 
 export function InsightsView({
+  userId,
   workspaceId,
   data,
   selectedMonth,
@@ -158,6 +160,7 @@ export function InsightsView({
         >
           <AssistantPanel
             key={`${workspaceId}-${seedRequest.id}`}
+            userId={userId}
             workspaceId={workspaceId}
             selectedMonth={selectedMonth}
             seedQuestion={seedRequest.question}
@@ -232,17 +235,19 @@ function InsightCard({
 }
 
 function AssistantPanel({
+  userId,
   workspaceId,
   selectedMonth,
   seedQuestion,
   sources,
 }: {
+  userId: string;
   workspaceId: string;
   selectedMonth: string;
   seedQuestion: string;
   sources: string[];
 }) {
-  const storageKey = `networth-ai-history-v1-${workspaceId}`;
+  const storageKey = `networth-ai-history-v2-${userId}-${workspaceId}`;
   const [messages, setMessages] = useState<AIChatMessage[]>(() =>
     loadStoredMessages(storageKey),
   );
@@ -289,6 +294,7 @@ function AssistantPanel({
       }>("networth-ai-chat", {
         body: {
           message: cleanPrompt,
+          workspaceId,
           history: messages
             .slice(-10)
             .map(({ role, content }) => ({ role, content })),

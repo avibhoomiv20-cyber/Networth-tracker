@@ -50,6 +50,13 @@ const accountTypes: AssetClass[] = [
   "liability",
 ];
 
+const starterAccountTypes: AssetClass[] = [
+  "bank",
+  "cash",
+  "investment",
+  "liability",
+];
+
 export function CloudDataManager({
   workspaceId,
   data,
@@ -385,8 +392,25 @@ function EditorModal({
 }) {
   const initial = initialValues(editor, accounts);
   const [values, setValues] = useState<EditorValues>(initial);
+  const [showAllAccountTypes, setShowAllAccountTypes] = useState(
+    () =>
+      editor.kind === "account" &&
+      Boolean(
+        editor.value &&
+          !starterAccountTypes.includes(editor.value.class_raw),
+      ),
+  );
   const set = (key: string, value: string) =>
     setValues((current) => ({ ...current, [key]: value }));
+  const visibleAccountTypes =
+    editor.kind === "account" && !showAllAccountTypes
+      ? Array.from(
+          new Set([
+            ...starterAccountTypes,
+            values.class_raw as AssetClass,
+          ]),
+        )
+      : accountTypes;
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -414,8 +438,17 @@ function EditorModal({
               <label className="editor-field">
                 <span>Account type</span>
                 <select value={values.class_raw} onChange={(event) => set("class_raw", event.target.value)}>
-                  {accountTypes.map((type) => <option key={type} value={type}>{classLabels[type]}</option>)}
+                  {visibleAccountTypes.map((type) => <option key={type} value={type}>{classLabels[type]}</option>)}
                 </select>
+                <button
+                  className="text-button"
+                  onClick={() => setShowAllAccountTypes((value) => !value)}
+                  type="button"
+                >
+                  {showAllAccountTypes
+                    ? "Show common categories only"
+                    : "Show more categories"}
+                </button>
               </label>
               <EditorField label="Broker or bank" value={values.broker_name} set={(value) => set("broker_name", value)} />
               <EditorField label="Ticker symbol" value={values.ticker_symbol} set={(value) => set("ticker_symbol", value)} />

@@ -161,10 +161,22 @@ export default function Home() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      const nextUserId = nextSession?.user.id ?? null;
+      const userChanged = loadedUserId !== nextUserId;
+      if (userChanged) {
+        // Invalidate any in-flight request and remove the previous user's
+        // workspace before rendering the new session.
+        requestSequence += 1;
+        loadedUserId = nextUserId;
+        setWorkspace(null);
+        setTrackerData(null);
+        setRefreshedAt(null);
+        setSetupError("");
+        setLoading(Boolean(nextSession));
+      }
       setSession(nextSession);
 
       if (event === "INITIAL_SESSION") {
-        loadedUserId = nextSession?.user.id ?? null;
         window.setTimeout(
           () => void prepareWorkspace(nextSession, true),
           0,
@@ -173,7 +185,6 @@ export default function Home() {
       }
 
       if (event === "SIGNED_OUT") {
-        loadedUserId = null;
         window.setTimeout(() => void prepareWorkspace(null, true), 0);
         return;
       }
@@ -181,9 +192,8 @@ export default function Home() {
       if (
         event === "SIGNED_IN" &&
         nextSession &&
-        loadedUserId !== nextSession.user.id
+        userChanged
       ) {
-        loadedUserId = nextSession.user.id;
         window.setTimeout(
           () => void prepareWorkspace(nextSession, true),
           0,
@@ -240,6 +250,7 @@ export default function Home() {
 
   return (
     <AppShell
+      key={session.user.id}
       session={session}
       workspace={workspace}
       trackerData={trackerData}
