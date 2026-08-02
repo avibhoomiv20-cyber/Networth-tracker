@@ -20,7 +20,7 @@ export const classOrder: AssetClass[] = [
 
 export const classLabels: Record<AssetClass, string> = {
   cash: "Cash",
-  bank: "In Bank",
+  bank: "Bank Accounts",
   investment: "Investments",
   retirement: "PPF / NPS",
   companyStock: "RSU / US Stock",
@@ -76,7 +76,6 @@ export function buildMonthlyRows(data: TrackerData): MonthlyRow[] {
     new Set([
       ...data.snapshots.map((item) => item.captured_on.slice(0, 7)),
       ...data.entries.map((item) => item.entry_date.slice(0, 7)),
-      ...data.notes.map((item) => item.month_start.slice(0, 7)),
     ]),
   ).sort();
 
@@ -145,7 +144,9 @@ export function buildMonthlyRows(data: TrackerData): MonthlyRow[] {
     );
     row.netWorth = row.assets - row.liabilities;
     return row;
-  });
+  }).filter((row) =>
+    Object.values(row.byAccount).some((value) => value !== 0),
+  );
 }
 
 export function formatINR(paise: number, compact = false): string {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { AlertCircle, LoaderCircle, LockKeyhole, ShieldCheck } from "lucide-react";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { BrandMark } from "@/components/ui/BrandMark";
@@ -8,6 +9,7 @@ import { BrandMark } from "@/components/ui/BrandMark";
 type AuthMode = "sign-in" | "sign-up";
 
 export function AuthPanel() {
+  const router = useRouter();
   const [mode, setMode] = useState<AuthMode>("sign-in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -32,7 +34,7 @@ export function AuthPanel() {
         : await supabase.auth.signUp({
             email,
             password,
-            options: { emailRedirectTo: window.location.origin },
+            options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
           });
 
     if (result.error) {
@@ -43,6 +45,8 @@ export function AuthPanel() {
       setMessage(
         "Confirmation requested. Check your inbox and spam folder, then confirm your account.",
       );
+    } else {
+      router.refresh();
     }
 
     setBusy(false);
@@ -63,7 +67,7 @@ export function AuthPanel() {
     const { error } = await supabase.auth.resend({
       type: "signup",
       email: confirmationEmail,
-      options: { emailRedirectTo: window.location.origin },
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
     });
 
     setIsSuccess(!error);
@@ -81,15 +85,15 @@ export function AuthPanel() {
         <BrandMark size="large" />
 
         <div className="auth-copy">
-          <p className="eyebrow">Your complete financial picture</p>
+          <p className="eyebrow">Your complete portfolio</p>
           <h1>Know where you stand. Every month.</h1>
           <p>
-            Bring accounts, holdings and net worth into one calm workspace
+            Bring accounts, holdings and net worth into one calm personal portfolio
             designed for regular updates—not financial noise.
           </p>
           <div className="trust-row">
             <span><LockKeyhole size={15} /> Private by default</span>
-            <span><ShieldCheck size={15} /> Workspace protected</span>
+            <span><ShieldCheck size={15} /> Portfolio protected</span>
           </div>
         </div>
 
@@ -112,7 +116,7 @@ export function AuthPanel() {
       <section className="auth-side">
         <div className="auth-card">
           <p className="eyebrow">Secure access</p>
-          <h2>{mode === "sign-in" ? "Welcome back" : "Create your workspace"}</h2>
+          <h2>{mode === "sign-in" ? "Welcome back" : "Create your portfolio"}</h2>
           <p className="auth-intro">
             {mode === "sign-in"
               ? "Sign in to continue to your tracker."
@@ -174,7 +178,7 @@ export function AuthPanel() {
                 ? "Please wait…"
                 : mode === "sign-in"
                   ? "Sign in securely"
-                  : "Create private workspace"}
+                  : "Create private portfolio"}
             </button>
           </form>
 
@@ -196,7 +200,7 @@ export function AuthPanel() {
           )}
 
           <p className="auth-fineprint">
-            Your financial data is separated by workspace and protected by
+            Your financial data is separated by account and protected by
             database-level access rules.
           </p>
         </div>

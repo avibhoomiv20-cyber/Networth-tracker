@@ -1,13 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { CheckCircle2, Plus, Save, Trash2 } from "lucide-react";
 import {
   classLabels,
   classOrder,
   formatINR,
   formatMonth,
-  preferredSnapshotOrder,
 } from "@/lib/tracker";
 import { encodeMonthlyRemarks, parseMonthlyRemarks } from "@/lib/monthlyRemarks";
 import {
@@ -23,6 +22,7 @@ import type {
   CloudSnapshot,
   TrackerData,
 } from "@/lib/types";
+import type { PortfolioReadModel } from "@/lib/portfolio/readModel";
 
 type MarketDraft = {
   quantity: string;
@@ -33,16 +33,18 @@ type MarketDraft = {
 export function DirectHoldingsEntry({
   workspaceId,
   data,
+  readModel,
   selectedMonth,
   onDataChange,
 }: {
   workspaceId: string;
   data: TrackerData;
+  readModel: PortfolioReadModel;
   selectedMonth: string;
   onDataChange: (data: TrackerData) => void;
 }) {
-  const availableClasses = classOrder.filter((assetClass) =>
-    data.accounts.some((account) => account.class_raw === assetClass),
+  const availableClasses = classOrder.filter(
+    (item) => (readModel.accountsByClass.get(item)?.length ?? 0) > 0,
   );
   const month = selectedMonth;
   const [assetClass, setAssetClass] = useState<AssetClass>(
@@ -75,27 +77,12 @@ export function DirectHoldingsEntry({
       Object.values(market).some((value) => value.trim() !== ""),
     );
 
-  const accounts = data.accounts.filter(
-    (account) => account.class_raw === assetClass,
-  );
+  const accounts = readModel.accountsByClass.get(assetClass) ?? [];
 
   const exactSnapshot = (accountId: string) =>
-    data.snapshots
-      .filter(
-        (snapshot) =>
-          snapshot.account_id === accountId &&
-          snapshot.captured_on.slice(0, 7) === month,
-      )
-      .sort(preferredSnapshotOrder)[0];
+    readModel.snapshotFor(accountId, month);
 
-  const carriedSnapshot = (accountId: string) =>
-    data.snapshots
-      .filter(
-        (snapshot) =>
-          snapshot.account_id === accountId &&
-          snapshot.captured_on.slice(0, 7) === month,
-      )
-      .sort(preferredSnapshotOrder)[0];
+  const carriedSnapshot = exactSnapshot;
 
   const marketDraft = (accountId: string): MarketDraft => {
     const carried = carriedSnapshot(accountId);
@@ -136,11 +123,7 @@ export function DirectHoldingsEntry({
       ) {
         continue;
       }
-      const snapshot = preferredSnapshotForMonth(
-        data.snapshots,
-        account.id,
-        previousMonth,
-      );
+      const snapshot = readModel.snapshotFor(account.id, previousMonth);
       if (!snapshot) continue;
       copiedValues[account.id] = String(Number(snapshot.value_paise) / 100);
       copiedIds.push(account.id);
@@ -451,7 +434,7 @@ export function DirectHoldingsEntry({
                   onChange={(event) => updateMarketDraft(account.id, { usdRate: event.target.value })}
                 />
               )}
-              <span className="currency-input">
+              <span className="currency-input quiet-value-input">
                 <b>₹</b>
                 <input
                   inputMode="decimal"
@@ -515,11 +498,13 @@ const newDraft = (): EntryDraft => ({
 export function DirectAccountBookEntry({
   workspaceId,
   data,
+  readModel,
   selectedMonth,
   onDataChange,
 }: {
   workspaceId: string;
   data: TrackerData;
+  readModel: PortfolioReadModel;
   selectedMonth: string;
   onDataChange: (data: TrackerData) => void;
 }) {
@@ -532,17 +517,12 @@ export function DirectAccountBookEntry({
   const usesUnits =
     selectedAccount?.class_raw === "companyStock" ||
     selectedAccount?.class_raw === "gold";
-  const openingSnapshot = preferredSnapshotForMonth(
-    data.snapshots,
+  const openingSnapshot = readModel.snapshotFor(
     accountId,
     shiftMonth(selectedMonth, -1),
   );
   const openingBalance = Number(openingSnapshot?.value_paise ?? 0);
-  const monthMovement = data.entries
-    .filter(
-      (entry) =>
-        entry.account_id === accountId && entry.entry_date.slice(0, 7) === selectedMonth,
-    )
+  const monthMovement = readModel.entriesFor(accountId, selectedMonth)
     .reduce(
       (total, entry) =>
         total + Number(entry.amount_paise) * (entry.direction === "increase" ? 1 : -1),
@@ -554,15 +534,6 @@ export function DirectAccountBookEntry({
     setDrafts((current) =>
       current.map((draft) => (draft.id === id ? { ...draft, ...change } : draft)),
     );
-
-  const saveOnAmountBlur = (draft: EntryDraft) => {
-    if (
-      draft.description.trim() &&
-      calculatedAmount(draft, selectedAccount?.class_raw) > 0
-    ) {
-      void saveRows();
-    }
-  };
 
   const saveRows = async () => {
     const valid = drafts.filter(
@@ -577,11 +548,8 @@ export function DirectAccountBookEntry({
     try {
       const month = date.slice(0, 7);
       const previousMonth = shiftMonth(month, -1);
-      const opening = preferredSnapshotForMonth(data.snapshots, accountId, previousMonth);
-      const currentEntries = data.entries.filter(
-        (entry) =>
-          entry.account_id === accountId && entry.entry_date.slice(0, 7) === month,
-      );
+      const opening = readModel.snapshotFor(accountId, previousMonth);
+      const currentEntries = readModel.entriesFor(accountId, month);
       const direction = (entry: CloudEntry) => entry.direction === "increase" ? 1 : -1;
       const draftDirection = (draft: EntryDraft) =>
         draft.direction === "increase" ? 1 : -1;
@@ -609,7 +577,7 @@ export function DirectAccountBookEntry({
             total + draftDirection(draft) * number(draft.quantity),
           0,
         );
-      const currentSnapshot = preferredSnapshotForMonth(data.snapshots, accountId, month);
+      const currentSnapshot = readModel.snapshotFor(accountId, month);
       const entryOperations: SyncOperation[] = valid.map((draft) => ({
         entity: "entry",
         action: "upsert",
@@ -676,16 +644,7 @@ export function DirectAccountBookEntry({
     }
   };
 
-  const recentEntries = useMemo(
-    () =>
-      [...data.entries]
-        .sort((a, b) => b.entry_date.localeCompare(a.entry_date))
-        .slice(0, 20),
-    [data.entries],
-  );
-  const accountNames = new Map(
-    data.accounts.map((account) => [account.id, account.name]),
-  );
+  const recentEntries = readModel.sortedEntries.slice(0, 20);
 
   return (
     <div className="tracker-stack">
@@ -782,7 +741,6 @@ export function DirectAccountBookEntry({
                     placeholder="Amount"
                     value={draft.amount}
                     onChange={(event) => update(draft.id, { amount: event.target.value })}
-                    onBlur={() => saveOnAmountBlur(draft)}
                   />
                 </span>
               </div>
@@ -820,7 +778,7 @@ export function DirectAccountBookEntry({
             <article key={entry.id}>
               <div>
                 <strong>{entry.description}</strong>
-                <span>{accountNames.get(entry.account_id)} · {entry.entry_date}</span>
+                <span>{readModel.accountsById.get(entry.account_id)?.name} · {entry.entry_date}</span>
               </div>
               <strong className={entry.direction === "increase" ? "in" : "out"}>
                 {entry.direction === "increase" ? "+" : "−"} {formatINR(Number(entry.amount_paise))}
@@ -831,19 +789,6 @@ export function DirectAccountBookEntry({
       </section>
     </div>
   );
-}
-
-function preferredSnapshotForMonth(
-  snapshots: CloudSnapshot[],
-  accountId: string,
-  month: string,
-) {
-  return snapshots
-    .filter(
-      (snapshot) =>
-        snapshot.account_id === accountId && snapshot.captured_on.slice(0, 7) === month,
-    )
-    .sort(preferredSnapshotOrder)[0];
 }
 
 function shiftMonth(month: string, amount: number) {

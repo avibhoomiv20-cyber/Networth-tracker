@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowUpRight,
-  Check,
   CircleHelp,
   Database,
   MessageCircle,
@@ -68,7 +67,7 @@ export function InsightsView({
         <h2>No insight-ready values for {formatMonth(selectedMonth)}</h2>
         <p>
           Add holdings for this month or choose a recorded month. Insights only
-          use values that are present in your workspace.
+          use values that are present in your portfolio.
         </p>
       </section>
     );
@@ -101,7 +100,7 @@ export function InsightsView({
           <Database size={14} />
           {refreshedAt
             ? `Data refreshed ${formatRelativeTime(refreshedAt)}`
-            : "Using loaded workspace data"}
+            : "Using data from your portfolio"}
         </span>
       </div>
 
@@ -134,7 +133,7 @@ export function InsightsView({
         >
           <div className="briefing-heading">
             <div>
-              <p className="eyebrow">Financial briefing</p>
+              <p className="eyebrow">Portfolio insights</p>
               <h2>{formatMonth(briefing.monthId)}</h2>
               <p>
                 Deterministic observations calculated from your synced records.
@@ -184,9 +183,6 @@ function InsightCard({
   item: FinancialInsight;
   onAsk: (question: string) => void;
 }) {
-  const [feedback, setFeedback] = useState<"useful" | "not-useful" | null>(
-    null,
-  );
   return (
     <article className={`insight-card tone-${item.tone}`}>
       <div className="insight-icon" aria-hidden="true">
@@ -212,22 +208,6 @@ function InsightCard({
           <button onClick={() => onAsk(item.question)} type="button">
             <MessageCircle size={14} /> Ask about this
           </button>
-          <div className="feedback-controls" aria-label="Insight feedback">
-            {feedback ? (
-              <span>
-                <Check size={13} /> Feedback saved
-              </span>
-            ) : (
-              <>
-                <button onClick={() => setFeedback("useful")} type="button">
-                  Useful
-                </button>
-                <button onClick={() => setFeedback("not-useful")} type="button">
-                  Not useful
-                </button>
-              </>
-            )}
-          </div>
         </div>
       </div>
     </article>
@@ -252,6 +232,11 @@ function AssistantPanel({
     loadStoredMessages(storageKey),
   );
   const [question, setQuestion] = useState(seedQuestion);
+  const [aiEnabled, setAIEnabled] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      window.localStorage.getItem("networth-ai-opt-in") === "true",
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -271,7 +256,7 @@ function AssistantPanel({
 
   const submit = async (prompt = question) => {
     const cleanPrompt = prompt.trim();
-    if (!cleanPrompt || loading) return;
+    if (!cleanPrompt || loading || !aiEnabled) return;
 
     const userMessage: AIChatMessage = {
       id: crypto.randomUUID(),
@@ -340,8 +325,8 @@ function AssistantPanel({
             <Sparkles size={17} />
           </span>
           <div>
-            <h2>Ask NetWorth AI</h2>
-            <p>Answers grounded in your live workspace</p>
+            <h2>Ask AssetTracker AI</h2>
+            <p>Based on your selected portfolio month</p>
           </div>
         </div>
         {messages.length > 0 && (
@@ -356,6 +341,14 @@ function AssistantPanel({
         )}
       </div>
 
+      <label className="ai-consent">
+        <input checked={aiEnabled} onChange={(event) => {
+          setAIEnabled(event.target.checked);
+          window.localStorage.setItem("networth-ai-opt-in", String(event.target.checked));
+        }} type="checkbox" />
+        <span>I agree to send anonymized, selected-period aggregates to the AI provider.</span>
+      </label>
+
       <div className="assistant-sources">
         {sources.map((source) => (
           <span key={source}>{source}</span>
@@ -366,7 +359,7 @@ function AssistantPanel({
         {messages.length === 0 ? (
           <div className="chat-welcome">
             <Sparkles size={22} />
-            <h3>Explore your financial picture</h3>
+            <h3>Explore your portfolio</h3>
             <p>
               Ask for explanations and comparisons. Calculations stay grounded
               in your Supabase records.
@@ -386,14 +379,14 @@ function AssistantPanel({
         ) : (
           messages.map((message) => (
             <div className={`chat-message ${message.role}`} key={message.id}>
-              <span>{message.role === "user" ? "You" : "NetWorth AI"}</span>
+              <span>{message.role === "user" ? "You" : "AssetTracker AI"}</span>
               <p>{message.content}</p>
             </div>
           ))
         )}
         {loading && (
           <div className="chat-message assistant thinking">
-            <span>NetWorth AI</span>
+            <span>AssetTracker AI</span>
             <p>Reviewing your records…</p>
           </div>
         )}
@@ -432,16 +425,14 @@ function AssistantPanel({
         />
         <button
           aria-label="Send question"
-          disabled={!question.trim() || loading}
+          disabled={!question.trim() || loading || !aiEnabled}
           type="submit"
         >
           <Send size={17} />
         </button>
       </form>
       <p className="chat-privacy">
-        History stays in this browser. Gemini receives anonymized totals,
-        categories, and dates—not names or notes—and cannot change your data.
-        Google may use free-tier requests to improve its products.
+        AI is optional and read-only. History stays in this browser; the provider receives only anonymized totals and category aggregates—not names, notes, account numbers, or raw records.
       </p>
     </div>
   );

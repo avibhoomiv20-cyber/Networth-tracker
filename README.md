@@ -1,6 +1,6 @@
-# NetWorth Tracker Web
+# AssetTracker Web
 
-The web companion for NetWorth Tracker. It uses Next.js for deployment and
+The web companion for AssetTracker. It uses Next.js for deployment and
 Supabase for authentication and shared tracker data.
 
 ## Prerequisites
@@ -19,8 +19,14 @@ production:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-publishable-or-anon-key
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
 ```
+
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` remains supported for existing deployments.
+Add `http://localhost:3000/auth/callback`, the production callback URL, and the
+matching Vercel Preview callback pattern to Supabase Authentication redirect
+URLs. Authenticated portfolio pages are server-rendered with cookie-based
+Supabase sessions and private/no-store response headers.
 
 The deterministic Insights screen works without an AI provider. Conversational
 analysis is served by the authenticated Supabase Edge Function in
@@ -40,3 +46,10 @@ descriptions, and comments; only anonymized financial aggregates are sent.
 
 - `npm run dev`: start local development
 - `npm run build`: create the standard Next.js `.next` deployment output
+
+## Vercel release
+
+1. Keep Preview and Production Supabase variables separate in Vercel.
+2. Build with `npm run build`; use the standard Next.js output.
+3. Verify `/auth/callback`, sign-in refresh, mobile navigation, and all four themes in Preview.
+4. Promote the verified deployment. Roll back by selecting the last healthy Vercel deployment; no database rollback is required for this web-only refactor.

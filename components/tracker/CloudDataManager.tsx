@@ -111,10 +111,10 @@ export function CloudDataManager({
     <div className="tracker-stack">
       <section className="manager-intro">
         <div>
-          <p className="eyebrow">Cloud editor</p>
-          <h2>Manage your synced tracker</h2>
+          <p className="eyebrow">Portfolio settings</p>
+          <h2>Manage your accounts and records</h2>
           <p>
-            Changes save directly to your private workspace and will download to
+            Changes save directly to your private portfolio and will download to
             the Mac app on its next launch or two-way sync.
           </p>
         </div>
@@ -423,7 +423,7 @@ function EditorModal({
       >
         <header>
           <div>
-            <p className="eyebrow">Cloud editor</p>
+            <p className="eyebrow">Portfolio editor</p>
             <h2>{editorTitle(editor)}</h2>
           </div>
           <button aria-label="Close editor" onClick={close} type="button">

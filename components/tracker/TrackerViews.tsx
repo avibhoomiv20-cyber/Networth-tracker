@@ -2,24 +2,20 @@
 
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import dynamic from "next/dynamic";
 import {
   ArrowDownRight,
   ArrowUpRight,
   TrendingUp,
 } from "lucide-react";
-import { InsightsView } from "@/components/insights/InsightsView";
-import { CloudDataManager } from "@/components/tracker/CloudDataManager";
 import {
-  DirectAccountBookEntry,
-  DirectHoldingsEntry,
-} from "@/components/tracker/DirectEntryViews";
-import {
-  buildMonthlyRows,
   classLabels,
   classOrder,
   formatINR,
   formatMonth,
 } from "@/lib/tracker";
+import { buildPortfolioReadModel } from "@/lib/portfolio/readModel";
+import type { PortfolioReadModel } from "@/lib/portfolio/readModel";
 import { parseMonthlyRemarks } from "@/lib/monthlyRemarks";
 import { encodeMonthlyRemarks } from "@/lib/monthlyRemarks";
 import {
@@ -34,6 +30,24 @@ import type {
   CloudMonthlyNote,
   TrackerData,
 } from "@/lib/types";
+
+const featureLoading = () => <FeatureLoading />;
+const InsightsView = dynamic(
+  () => import("@/components/insights/InsightsView").then((module) => module.InsightsView),
+  { loading: featureLoading },
+);
+const CloudDataManager = dynamic(
+  () => import("@/components/tracker/CloudDataManager").then((module) => module.CloudDataManager),
+  { loading: featureLoading },
+);
+const DirectHoldingsEntry = dynamic(
+  () => import("@/components/tracker/DirectEntryViews").then((module) => module.DirectHoldingsEntry),
+  { loading: featureLoading },
+);
+const DirectAccountBookEntry = dynamic(
+  () => import("@/components/tracker/DirectEntryViews").then((module) => module.DirectAccountBookEntry),
+  { loading: featureLoading },
+);
 
 type TrackerViewsProps = {
   section: AppSection;
@@ -66,7 +80,8 @@ export function TrackerViews({
   refreshedAt,
   onDataChange,
 }: TrackerViewsProps) {
-  const rows = useMemo(() => buildMonthlyRows(data), [data]);
+  const readModel = useMemo(() => buildPortfolioReadModel(data), [data]);
+  const rows = readModel.monthlyRows;
   let content: ReactNode;
 
   switch (section) {
@@ -98,6 +113,7 @@ export function TrackerViews({
           key={selectedMonth}
           workspaceId={workspaceId}
           data={data}
+          readModel={readModel}
           selectedMonth={selectedMonth}
           onDataChange={onDataChange}
         />
@@ -109,6 +125,7 @@ export function TrackerViews({
           key={selectedMonth}
           workspaceId={workspaceId}
           data={data}
+          readModel={readModel}
           selectedMonth={selectedMonth}
           onDataChange={onDataChange}
         />
@@ -118,7 +135,7 @@ export function TrackerViews({
       content = <LedgerView rows={rows} />;
       break;
     case "history":
-      content = <HistoryView data={data} />;
+      content = <HistoryView readModel={readModel} />;
       break;
     case "setup":
       content = (
@@ -150,6 +167,17 @@ export function TrackerViews({
   );
 }
 
+function FeatureLoading() {
+  return (
+    <section className="section-card feature-skeleton" aria-live="polite">
+      <span />
+      <span />
+      <span />
+      <p>Preparing this view…</p>
+    </section>
+  );
+}
+
 function SummaryView({
   workspaceId,
   data,
@@ -160,7 +188,7 @@ function SummaryView({
   workspaceId: string;
   data: TrackerData;
   onDataChange: (data: TrackerData) => void;
-  rows: ReturnType<typeof buildMonthlyRows>;
+  rows: PortfolioReadModel["monthlyRows"];
   selectedMonth: string;
 }) {
   const [showEmptyClasses, setShowEmptyClasses] = useState(false);
@@ -378,7 +406,7 @@ function Metric({
 function LedgerView({
   rows,
 }: {
-  rows: ReturnType<typeof buildMonthlyRows>;
+  rows: PortfolioReadModel["monthlyRows"];
 }) {
   if (!rows.length) return <SyncedEmptyState />;
   return <MonthlyTable rows={rows} expanded />;
@@ -388,10 +416,12 @@ function MonthlyTable({
   rows,
   expanded = false,
 }: {
-  rows: ReturnType<typeof buildMonthlyRows>;
+  rows: PortfolioReadModel["monthlyRows"];
   expanded?: boolean;
 }) {
-  const visible = expanded ? [...rows].reverse() : [...rows].reverse().slice(0, 12);
+  const [visibleCount, setVisibleCount] = useState(expanded ? 36 : 12);
+  const ordered = [...rows].reverse();
+  const visible = ordered.slice(0, visibleCount);
   const activeClasses = classOrder.filter((assetClass) =>
     rows.some((row) => row.byClass[assetClass] !== 0),
   );
@@ -418,39 +448,48 @@ function MonthlyTable({
           <tbody>
             {visible.map((row) => (
               <tr key={row.monthId}>
-                <td><strong>{formatMonth(row.monthId)}</strong></td>
+                <td data-label="Month"><strong>{formatMonth(row.monthId)}</strong></td>
                 {activeClasses.map((assetClass) => (
                   <td
                     className={assetClass === "liability" ? "debt-cell" : ""}
+                    data-label={classLabels[assetClass]}
                     key={assetClass}
                   >
                     {formatINR(row.byClass[assetClass])}
                   </td>
                 ))}
-                <td className="networth-cell">{formatINR(row.netWorth)}</td>
+                <td className="networth-cell" data-label="Net worth">{formatINR(row.netWorth)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {expanded && visible.length < ordered.length && (
+        <div className="incremental-actions">
+          <span>Showing {visible.length} of {ordered.length} months</span>
+          <button
+            className="secondary-button"
+            onClick={() => setVisibleCount((count) => count + 36)}
+            type="button"
+          >
+            Show earlier months
+          </button>
+        </div>
+      )}
     </section>
   );
 }
 
-function HistoryView({ data }: { data: TrackerData }) {
-  const accountNames = new Map(
-    data.accounts.map((account) => [account.id, account.name]),
-  );
-  const snapshots = [...data.snapshots].sort((a, b) =>
-    b.captured_on.localeCompare(a.captured_on),
-  );
+function HistoryView({ readModel }: { readModel: PortfolioReadModel }) {
+  const [visibleCount, setVisibleCount] = useState(60);
+  const snapshots = readModel.sortedSnapshots.slice(0, visibleCount);
 
   return (
     <section className="section-card">
       <div className="card-heading">
         <div>
           <p className="eyebrow">Snapshot history</p>
-          <h3>{snapshots.length} saved values</h3>
+          <h3>{readModel.sortedSnapshots.length} saved values</h3>
         </div>
       </div>
       <div className="responsive-table">
@@ -468,17 +507,29 @@ function HistoryView({ data }: { data: TrackerData }) {
           <tbody>
             {snapshots.map((snapshot) => (
               <tr key={snapshot.id}>
-                <td>{formatDate(snapshot.captured_on)}</td>
-                <td><strong>{accountNames.get(snapshot.account_id) ?? "Holding"}</strong></td>
-                <td>{snapshot.source}</td>
-                <td className="muted-cell">{snapshot.note || "—"}</td>
-                <td>{Number(snapshot.quantity) > 0 ? Number(snapshot.quantity).toLocaleString("en-IN") : "—"}</td>
-                <td className="amount-cell">{formatINR(snapshot.value_paise)}</td>
+                <td data-label="Date">{formatDate(snapshot.captured_on)}</td>
+                <td data-label="Holding"><strong>{readModel.accountsById.get(snapshot.account_id)?.name ?? "Holding"}</strong></td>
+                <td data-label="Source">{snapshot.source}</td>
+                <td className="muted-cell" data-label="Note">{snapshot.note || "—"}</td>
+                <td data-label="Quantity">{Number(snapshot.quantity) > 0 ? Number(snapshot.quantity).toLocaleString("en-IN") : "—"}</td>
+                <td className="amount-cell" data-label="Value">{formatINR(snapshot.value_paise)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {visibleCount < readModel.sortedSnapshots.length && (
+        <div className="incremental-actions">
+          <span>Showing {snapshots.length} of {readModel.sortedSnapshots.length}</span>
+          <button
+            className="secondary-button"
+            onClick={() => setVisibleCount((count) => count + 60)}
+            type="button"
+          >
+            Show more
+          </button>
+        </div>
+      )}
     </section>
   );
 }

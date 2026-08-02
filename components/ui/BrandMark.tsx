@@ -10,7 +10,7 @@ export function BrandMark({ size = "default" }: BrandMarkProps) {
       <span className="brand-symbol" aria-hidden="true">
         <ChartNoAxesCombined size={size === "large" ? 22 : 19} strokeWidth={2.3} />
       </span>
-      <span>NetWorth Tracker</span>
+      <span>AssetTracker</span>
     </div>
   );
 }

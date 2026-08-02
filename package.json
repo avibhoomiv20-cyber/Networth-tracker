@@ -1,5 +1,5 @@
 {
-  "name": "networth-tracker-web",
+  "name": "assettracker-web",
   "version": "0.1.0",
   "private": true,
   "engines": {
@@ -13,6 +13,7 @@
     "lint": "eslint . --ignore-pattern .next --ignore-pattern dist --ignore-pattern .vinext"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.110.8",
     "lucide-react": "^1.26.0",
     "next": "16.2.6",

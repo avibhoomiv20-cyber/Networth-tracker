@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { Session } from "@supabase/supabase-js";
+import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   BookOpenText,
   ChartNoAxesCombined,
@@ -11,11 +11,14 @@ import {
   Clock3,
   LayoutDashboard,
   LogOut,
+  MoreHorizontal,
   NotebookTabs,
   RefreshCw,
   Settings2,
   Sparkles,
   SlidersHorizontal,
+  Palette,
+  X,
 } from "lucide-react";
 import { GettingStarted } from "@/components/onboarding/GettingStarted";
 import { TrackerViews } from "@/components/tracker/TrackerViews";
@@ -29,13 +32,11 @@ import type {
 } from "@/lib/types";
 
 type AppShellProps = {
-  session: Session;
+  userId: string;
   workspace: WorkspaceSummary | null;
   trackerData: TrackerData | null;
   setupError: string;
-  refreshing: boolean;
-  refreshedAt: Date | null;
-  onRefresh: () => void;
+  refreshedAt: string | null;
 };
 
 const sections: Array<{
@@ -55,15 +56,15 @@ const sections: Array<{
 const sectionCopy: Record<AppSection, { title: string; description: string }> = {
   summary: {
     title: "Overview",
-    description: "Your complete financial picture, month by month.",
+    description: "Your net worth and asset position, month by month.",
   },
   insights: {
     title: "Insights",
-    description: "Understand what changed and explore your live financial data.",
+    description: "Clear observations from your portfolio, with optional privacy-safe AI.",
   },
   holdings: {
     title: "Holdings",
-    description: "Accounts and current values, grouped your way.",
+    description: "Update the month-end value of your assets and liabilities.",
   },
   "account-book": {
     title: "Account Book",
@@ -84,6 +85,12 @@ const sectionCopy: Record<AppSection, { title: string; description: string }> = 
 };
 
 const sectionIds = new Set<AppSection>(sections.map((section) => section.id));
+const mobilePrimarySections = sections.filter(({ id }) =>
+  ["summary", "insights", "holdings", "account-book"].includes(id),
+);
+const mobileSecondarySections = sections.filter(({ id }) =>
+  ["ledger", "history", "setup"].includes(id),
+);
 
 function sectionFromLocation(): AppSection {
   if (typeof window === "undefined") return "summary";
@@ -92,20 +99,20 @@ function sectionFromLocation(): AppSection {
 }
 
 export function AppShell({
-  session,
+  userId,
   workspace,
   trackerData,
   setupError,
-  refreshing,
   refreshedAt,
-  onRefresh,
 }: AppShellProps) {
+  const router = useRouter();
+  const [refreshing, startRefresh] = useTransition();
   const [activeSection, setActiveSection] =
     useState<AppSection>(sectionFromLocation);
   const [currentData, setCurrentData] = useState(trackerData);
   const [selectedMonth, setSelectedMonth] = useState("");
-  const email = session.user.email ?? "Signed-in user";
-  const initials = email.slice(0, 2).toUpperCase();
+  const [theme, setTheme] = useState("montaire");
+  const [showsMore, setShowsMore] = useState(false);
   const copy = sectionCopy[activeSection];
   const isNewWorkspace =
     (currentData?.accounts.length ?? workspace?.accountCount ?? 0) === 0;
@@ -131,13 +138,30 @@ export function AppShell({
     };
   }, []);
 
+  useEffect(() => {
+    const saved = window.localStorage.getItem("networth-theme");
+    if (saved) setTheme(saved);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem("networth-theme", theme);
+  }, [theme]);
+
   const navigateSection = (section: AppSection) => {
     setActiveSection(section);
+    setShowsMore(false);
     window.history.pushState(null, "", `#${section}`);
   };
 
   const signOut = async () => {
     await getSupabaseClient()?.auth.signOut();
+    router.replace("/");
+    router.refresh();
+  };
+
+  const refreshFromCloud = () => {
+    startRefresh(() => router.refresh());
   };
 
   const moveMonth = (amount: number) => {
@@ -167,16 +191,16 @@ export function AppShell({
     <div className="app-layout">
       <aside className="sidebar">
         <BrandMark />
-        <p className="workspace-label">Workspace</p>
+        <p className="workspace-label">Portfolio</p>
         <p className="workspace-name">{workspace?.name ?? "My Net Worth"}</p>
         {nav("sidebar-nav")}
 
         <div className="sidebar-bottom">
           <div className="user-chip">
-            <span className="user-avatar">{initials}</span>
+            <span className="user-avatar" aria-hidden="true">AT</span>
             <span className="user-copy">
-              <strong>Private account</strong>
-              <span>{email}</span>
+              <strong>Cloud connected</strong>
+              <span>Personal portfolio</span>
             </span>
           </div>
           <button className="sign-out" onClick={signOut} type="button">
@@ -193,14 +217,22 @@ export function AppShell({
             <span>Sign out</span>
           </button>
         </header>
-        {nav("mobile-nav")}
-
         <header className="page-header">
           <div>
             <h1>{copy.title}</h1>
             <p>{copy.description}</p>
           </div>
           <div className="header-actions">
+            <label className="theme-picker">
+              <Palette size={15} />
+              <span className="sr-only">Theme</span>
+              <select aria-label="Theme" onChange={(event) => setTheme(event.target.value)} value={theme}>
+                <option value="montaire">Ivory</option>
+                <option value="obsidian">Dark</option>
+                <option value="sapphire">Sapphire</option>
+                <option value="bali">Veranda</option>
+              </select>
+            </label>
             {usesMonthlyView && (
               <div className="month-navigator" aria-label="Selected month">
                 <button
@@ -223,7 +255,7 @@ export function AppShell({
             <button
               className="secondary-button"
               disabled={refreshing}
-              onClick={onRefresh}
+              onClick={refreshFromCloud}
               type="button"
             >
               <RefreshCw
@@ -236,7 +268,7 @@ export function AppShell({
               className="status-pill"
               title={
                 refreshedAt
-                  ? `Data refreshed ${refreshedAt.toLocaleString("en-IN")}`
+                  ? `Data refreshed ${new Date(refreshedAt).toLocaleString("en-IN")}`
                   : undefined
               }
             >
@@ -244,8 +276,8 @@ export function AppShell({
               {syncRecoveryMode
                 ? "Read-only recovery"
                 : refreshedAt
-                  ? `Refreshed ${formatRelativeRefresh(refreshedAt)}`
-                  : "Synced workspace"}
+                  ? `Refreshed ${formatRelativeRefresh(new Date(refreshedAt))}`
+                  : "Cloud connected"}
             </span>
           </div>
         </header>
@@ -262,11 +294,11 @@ export function AppShell({
         ) : currentData && workspace ? (
           <TrackerViews
             section={activeSection}
-            userId={session.user.id}
+            userId={userId}
             workspaceId={workspace.id}
             data={currentData}
             selectedMonth={activeMonth}
-            refreshedAt={refreshedAt}
+            refreshedAt={refreshedAt ? new Date(refreshedAt) : null}
             onDataChange={setCurrentData}
           />
         ) : (
@@ -282,11 +314,77 @@ export function AppShell({
               </h2>
               <p>
                 {isNewWorkspace
-                  ? "Add your first account in the next setup step. Nothing is pre-filled, so this workspace stays entirely yours."
+                  ? "Add your first account in Settings. Nothing is pre-filled, so this portfolio stays entirely yours."
                   : "Your synced data could not be loaded. Refresh the page or review the message above."}
               </p>
             </div>
           </section>
+        )}
+
+        <nav className="mobile-bottom-nav" aria-label="Primary destinations">
+          {mobilePrimarySections.map(({ id, label, icon: Icon }) => (
+            <button
+              className={activeSection === id ? "active" : ""}
+              key={id}
+              onClick={() => navigateSection(id)}
+              aria-current={activeSection === id ? "page" : undefined}
+              type="button"
+            >
+              <Icon size={18} />
+              <span>{id === "account-book" ? "Book" : label}</span>
+            </button>
+          ))}
+          <button
+            aria-expanded={showsMore}
+            className={
+              mobileSecondarySections.some(({ id }) => id === activeSection)
+                ? "active"
+                : ""
+            }
+            onClick={() => setShowsMore((visible) => !visible)}
+            type="button"
+          >
+            <MoreHorizontal size={19} />
+            <span>More</span>
+          </button>
+        </nav>
+
+        {showsMore && (
+          <div
+            className="more-sheet-backdrop"
+            onMouseDown={() => setShowsMore(false)}
+            role="presentation"
+          >
+            <section
+              aria-label="More destinations"
+              aria-modal="true"
+              className="more-sheet"
+              onMouseDown={(event) => event.stopPropagation()}
+              role="dialog"
+            >
+              <header>
+                <strong>More</strong>
+                <button
+                  aria-label="Close more destinations"
+                  onClick={() => setShowsMore(false)}
+                  type="button"
+                >
+                  <X size={18} />
+                </button>
+              </header>
+              {mobileSecondarySections.map(({ id, label, icon: Icon }) => (
+                <button
+                  className={activeSection === id ? "active" : ""}
+                  key={id}
+                  onClick={() => navigateSection(id)}
+                  type="button"
+                >
+                  <Icon size={18} />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </section>
+          </div>
         )}
       </main>
     </div>

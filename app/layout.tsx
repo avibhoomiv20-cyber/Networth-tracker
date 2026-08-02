@@ -10,39 +10,49 @@ const siteURL =
 export const metadata: Metadata = {
   metadataBase: new URL(siteURL),
   title: {
-    default: "NetWorth Tracker",
-    template: "%s · NetWorth Tracker",
+    default: "AssetTracker",
+    template: "%s · AssetTracker",
   },
   description:
-    "A private, shared workspace for tracking accounts, holdings and net worth.",
-  applicationName: "NetWorth Tracker",
+    "A private personal portfolio for tracking assets, liabilities and net worth.",
+  applicationName: "AssetTracker",
+  manifest: "/manifest.webmanifest",
+  robots: { index: false, follow: false },
   openGraph: {
-    title: "NetWorth Tracker",
+    title: "AssetTracker",
     description:
-      "See your complete financial picture in one calm, private workspace.",
+      "See your complete portfolio in one calm, private place.",
     type: "website",
     images: [
       {
         url: "/og.png",
         width: 1200,
         height: 630,
-        alt: "NetWorth Tracker dashboard with financial insights and an AI assistant",
+        alt: "AssetTracker dashboard with portfolio insights and a private AI assistant",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "NetWorth Tracker",
+    title: "AssetTracker",
     description:
-      "See your complete financial picture in one calm, private workspace.",
+      "See your complete portfolio in one calm, private place.",
     images: ["/og.png"],
   },
 };
 
 export const viewport: Viewport = {
-  colorScheme: "light",
-  themeColor: "#f4f7f5",
+  colorScheme: "light dark",
+  themeColor: "#f5f1e8",
+  viewportFit: "cover",
 };
+
+const themeBootstrap = `
+try {
+  const saved = localStorage.getItem("networth-theme");
+  if (saved) document.documentElement.dataset.theme = saved;
+} catch {}
+`;
 
 export default function RootLayout({
   children,
@@ -50,7 +60,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
+      </head>
       <body>{children}</body>
     </html>
   );
