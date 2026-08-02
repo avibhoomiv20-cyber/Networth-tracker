@@ -1,6 +1,6 @@
-const CACHE = "assettracker-static-v3";
-const STATIC = ["/manifest.webmanifest", "/favicon.svg"];
-self.addEventListener("install", (event) => event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(STATIC))));
+const CACHE = "assettracker-static-v4";
+const STATIC = ["/manifest.webmanifest", "/favicon.svg", "/app-icon-192.png", "/app-icon-512.png", "/apple-touch-icon.png"];
+self.addEventListener("install", (event) => event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(STATIC)).then(() => self.skipWaiting())));
 self.addEventListener("activate", (event) => event.waitUntil(Promise.all([
   caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)))),
   self.clients.claim(),

@@ -244,12 +244,16 @@ a {
 }
 
 .auth-copy h1 {
-  max-width: 36rem;
+  max-width: 42rem;
   margin: 0;
-  font-size: clamp(2.6rem, 5vw, 5.4rem);
+  font-size: clamp(2.6rem, 4.3vw, 4.8rem);
   font-weight: 680;
-  letter-spacing: -0.065em;
-  line-height: 0.98;
+  letter-spacing: -0.058em;
+  line-height: 1;
+}
+
+.auth-copy h1 span {
+  display: block;
 }
 
 .auth-copy > p {
@@ -397,6 +401,15 @@ a {
   border-color: var(--primary);
   box-shadow: 0 0 0 4px rgba(22, 127, 114, 0.1);
   outline: 0;
+}
+
+.field input:-webkit-autofill,
+.field input:-webkit-autofill:hover,
+.field input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--ink);
+  caret-color: var(--ink);
+  -webkit-box-shadow: 0 0 0 1000px var(--surface) inset;
+  box-shadow: 0 0 0 1000px var(--surface) inset;
 }
 
 .primary-button,
@@ -2258,6 +2271,419 @@ a {
 
   .book-entry-labels {
     display: none;
+  }
+}
+
+/* Device-local PWA privacy lock */
+.device-lock-page {
+  display: grid;
+  min-height: 100vh;
+  min-height: 100dvh;
+  place-content: center;
+  justify-items: center;
+  gap: 1rem;
+  padding:
+    calc(1.5rem + env(safe-area-inset-top))
+    calc(1.25rem + env(safe-area-inset-right))
+    calc(1.5rem + env(safe-area-inset-bottom))
+    calc(1.25rem + env(safe-area-inset-left));
+  background:
+    radial-gradient(circle at 50% 25%, color-mix(in srgb, var(--primary) 11%, transparent), transparent 28rem),
+    linear-gradient(145deg, var(--canvas), var(--surface-elevated));
+}
+
+.device-lock-page > p {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.device-lock-card {
+  display: grid;
+  width: min(27rem, calc(100vw - 2rem));
+  justify-items: stretch;
+  padding: clamp(1.5rem, 5vw, 2.3rem);
+  border: 1px solid var(--line);
+  border-radius: 1.35rem;
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(20px);
+}
+
+.device-lock-card > .brand {
+  justify-self: center;
+  margin-bottom: 2.2rem;
+}
+
+.device-lock-icon {
+  display: grid;
+  width: 4.3rem;
+  height: 4.3rem;
+  margin: 0 auto 1.2rem;
+  place-items: center;
+  border-radius: 1.3rem;
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+}
+
+.device-lock-card .eyebrow {
+  margin-bottom: 0.45rem;
+  text-align: center;
+}
+
+.device-lock-card h1 {
+  margin: 0;
+  font-size: 1.65rem;
+  letter-spacing: -0.04em;
+  text-align: center;
+}
+
+.device-lock-copy {
+  margin: 0.55rem 0 1.5rem;
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.device-unlock-button {
+  margin-bottom: 0.9rem;
+}
+
+.device-lock-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin: 0.2rem 0 0.85rem;
+  color: var(--ink-faint);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.device-lock-divider::before,
+.device-lock-divider::after {
+  height: 1px;
+  flex: 1;
+  background: var(--line);
+  content: "";
+}
+
+.device-passcode-field,
+.device-setting-passcode {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.device-passcode-field > span,
+.device-setting-passcode > span {
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  font-weight: 680;
+}
+
+.device-passcode-field input,
+.device-setting-passcode input {
+  width: 100%;
+  min-height: 3rem;
+  padding: 0 0.85rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 1.2rem;
+  letter-spacing: 0.22em;
+  text-align: center;
+}
+
+.device-passcode-field input:focus,
+.device-setting-passcode input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 12%, transparent);
+  outline: 0;
+}
+
+.device-passcode-button {
+  width: 100%;
+  margin-top: 0.7rem;
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+}
+
+.device-passcode-button:disabled,
+.device-sign-out:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.device-lock-error {
+  margin: 0.8rem 0 0;
+  color: var(--danger);
+  font-size: 0.76rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.device-sign-out {
+  justify-self: center;
+  margin-top: 1.25rem;
+  padding: 0.4rem;
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 0.76rem;
+}
+
+.device-lock-settings {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.device-lock-settings-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.85rem;
+}
+
+.settings-icon {
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: center;
+  border-radius: 0.8rem;
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+}
+
+.device-lock-settings-heading .eyebrow {
+  margin-bottom: 0.2rem;
+}
+
+.device-lock-settings-heading h2 {
+  margin: 0;
+  font-size: 1.12rem;
+  letter-spacing: -0.025em;
+}
+
+.device-lock-settings-heading p:last-child {
+  max-width: 52rem;
+  margin: 0.35rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.device-lock-status {
+  display: inline-flex;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0 0.65rem;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  font-weight: 720;
+}
+
+.device-lock-status.enabled {
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+}
+
+.device-lock-off,
+.device-lock-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  background: var(--surface-elevated);
+}
+
+.device-lock-off > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.device-lock-off strong,
+.device-lock-controls label > span {
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 680;
+}
+
+.device-lock-off span {
+  color: var(--ink-soft);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.device-lock-controls > label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.device-lock-controls select {
+  min-height: 2.45rem;
+  padding: 0 2rem 0 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.device-lock-actions,
+.device-lock-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.device-lock-actions .secondary-button {
+  min-height: 2.45rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 0.75rem;
+}
+
+.compact-button {
+  width: auto;
+  min-height: 2.5rem;
+  padding: 0 0.9rem;
+  white-space: nowrap;
+}
+
+.danger-text {
+  color: var(--danger);
+}
+
+.device-lock-form {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1.3fr) repeat(2, minmax(10rem, 0.8fr)) auto;
+  align-items: end;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--line));
+  border-radius: 0.9rem;
+  background: color-mix(in srgb, var(--primary) 5%, var(--surface));
+}
+
+.device-lock-form > div:first-child {
+  display: grid;
+  align-self: center;
+  gap: 0.25rem;
+}
+
+.device-lock-form > div:first-child strong {
+  font-size: 0.82rem;
+}
+
+.device-lock-form > div:first-child span {
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.device-lock-form:has(.device-setting-passcode:nth-of-type(1):last-of-type) {
+  grid-template-columns: minmax(12rem, 1.3fr) minmax(10rem, 0.8fr) auto;
+}
+
+.device-lock-form-actions .text-button {
+  min-height: 2.5rem;
+}
+
+.device-setting-message {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  color: var(--positive);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.device-setting-message.error {
+  color: var(--danger);
+}
+
+.device-lock-disclosure {
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 1050px) {
+  .device-lock-controls {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .device-lock-actions {
+    justify-content: flex-start;
+  }
+
+  .device-lock-form,
+  .device-lock-form:has(.device-setting-passcode:nth-of-type(1):last-of-type) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .device-lock-form > div:first-child,
+  .device-lock-form-actions {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 620px) {
+  .device-lock-settings-heading {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .device-lock-status {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .device-lock-off {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .device-lock-off .compact-button,
+  .device-lock-actions .secondary-button {
+    width: 100%;
+  }
+
+  .device-lock-actions {
+    display: grid;
+    width: 100%;
+    grid-template-columns: 1fr;
+  }
+
+  .device-lock-form,
+  .device-lock-form:has(.device-setting-passcode:nth-of-type(1):last-of-type) {
+    grid-template-columns: 1fr;
+  }
+
+  .device-lock-form > div:first-child,
+  .device-lock-form-actions {
+    grid-column: auto;
+  }
+
+  .device-lock-form-actions {
+    justify-content: stretch;
+  }
+
+  .device-lock-form-actions .primary-button,
+  .device-lock-form-actions .text-button {
+    flex: 1;
   }
 }
 

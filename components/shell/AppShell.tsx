@@ -23,6 +23,8 @@ import {
 import { GettingStarted } from "@/components/onboarding/GettingStarted";
 import { TrackerViews } from "@/components/tracker/TrackerViews";
 import { BrandMark } from "@/components/ui/BrandMark";
+import { DeviceLockGate } from "@/components/security/DeviceLockGate";
+import { DeviceLockSettings } from "@/components/security/DeviceLockSettings";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { syncRecoveryMode } from "@/lib/syncMode";
 import type {
@@ -188,6 +190,7 @@ export function AppShell({
   );
 
   return (
+    <DeviceLockGate>
     <div className="app-layout">
       <aside className="sidebar">
         <BrandMark />
@@ -289,6 +292,8 @@ export function AppShell({
           </div>
         )}
 
+        {activeSection === "setup" && <DeviceLockSettings />}
+
         {activeSection === "summary" && isNewWorkspace ? (
           <GettingStarted />
         ) : currentData && workspace ? (
@@ -388,6 +393,7 @@ export function AppShell({
         )}
       </main>
     </div>
+    </DeviceLockGate>
   );
 }
 

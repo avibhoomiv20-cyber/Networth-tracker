@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { PwaRegistration } from "@/components/pwa/PwaRegistration";
 import "./globals.css";
 
 const siteURL =
@@ -17,6 +18,18 @@ export const metadata: Metadata = {
     "A private personal portfolio for tracking assets, liabilities and net worth.",
   applicationName: "AssetTracker",
   manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "AssetTracker",
+  },
+  icons: {
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/app-icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
   robots: { index: false, follow: false },
   openGraph: {
     title: "AssetTracker",
@@ -64,7 +77,7 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
       </head>
-      <body>{children}</body>
+      <body><PwaRegistration />{children}</body>
     </html>
   );
 }

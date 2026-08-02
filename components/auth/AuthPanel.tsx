@@ -86,7 +86,7 @@ export function AuthPanel() {
 
         <div className="auth-copy">
           <p className="eyebrow">Your complete portfolio</p>
-          <h1>Know where you stand. Every month.</h1>
+          <h1>Know where you stand.<span>Every month.</span></h1>
           <p>
             Bring accounts, holdings and net worth into one calm personal portfolio
             designed for regular updates—not financial noise.
