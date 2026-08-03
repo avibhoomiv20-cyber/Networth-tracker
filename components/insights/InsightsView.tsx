@@ -45,6 +45,7 @@ const suggestedQuestions = [
   "What changed in my net worth?",
   "Review my asset concentration.",
   "How healthy is my liquidity?",
+  "Project my net worth to 2035 using clear scenarios.",
   "Check this month for duplicate Account Book entries.",
 ];
 
