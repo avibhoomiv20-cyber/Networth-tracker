@@ -11,7 +11,7 @@ export type DuplicateEntryFinding = {
 };
 
 const duplicateQuestionPattern =
-  /\b(duplicate|duplicates|duplicated|double[- ]?entry|entered twice|repeated entr(?:y|ies))\b/i;
+  /\b(duplicat\w*|dublicat\w*|dupicat\w*|double[- ]?entr\w*|entered twice|repeated entr\w*|same entr\w*)\b/i;
 
 export function isDuplicateAuditQuestion(prompt: string) {
   return duplicateQuestionPattern.test(prompt);
