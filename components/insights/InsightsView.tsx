@@ -15,6 +15,10 @@ import {
   buildInsightBriefing,
   type InsightRange,
 } from "@/lib/insights";
+import {
+  buildLocalDuplicateAuditAnswer,
+  isDuplicateAuditQuestion,
+} from "@/lib/portfolio/localAudit";
 import { formatMonth } from "@/lib/tracker";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import type {
@@ -41,6 +45,7 @@ const suggestedQuestions = [
   "What changed in my net worth?",
   "Review my asset concentration.",
   "How healthy is my liquidity?",
+  "Check this month for duplicate Account Book entries.",
 ];
 
 export function InsightsView({
@@ -163,6 +168,7 @@ export function InsightsView({
             workspaceId={workspaceId}
             selectedMonth={selectedMonth}
             seedQuestion={seedRequest.question}
+            data={data}
             sources={[
               `${data.accounts.length} accounts`,
               `${data.snapshots.length} snapshots`,
@@ -219,12 +225,14 @@ function AssistantPanel({
   workspaceId,
   selectedMonth,
   seedQuestion,
+  data,
   sources,
 }: {
   userId: string;
   workspaceId: string;
   selectedMonth: string;
   seedQuestion: string;
+  data: TrackerData;
   sources: string[];
 }) {
   const storageKey = `networth-ai-history-v2-${userId}-${workspaceId}`;
@@ -256,7 +264,9 @@ function AssistantPanel({
 
   const submit = async (prompt = question) => {
     const cleanPrompt = prompt.trim();
-    if (!cleanPrompt || loading || !aiEnabled) return;
+    if (!cleanPrompt || loading) return;
+    const isLocalAudit = isDuplicateAuditQuestion(cleanPrompt);
+    if (!isLocalAudit && !aiEnabled) return;
 
     const userMessage: AIChatMessage = {
       id: crypto.randomUUID(),
@@ -268,6 +278,20 @@ function AssistantPanel({
     setMessages(nextHistory);
     setQuestion("");
     setError("");
+
+    if (isLocalAudit) {
+      setMessages([
+        ...nextHistory,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: buildLocalDuplicateAuditAnswer(data, selectedMonth),
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -346,7 +370,7 @@ function AssistantPanel({
           setAIEnabled(event.target.checked);
           window.localStorage.setItem("networth-ai-opt-in", String(event.target.checked));
         }} type="checkbox" />
-        <span>I agree to send anonymized, selected-period aggregates to the AI provider.</span>
+        <span>I agree to send anonymized month, category, anonymous-account and derived audit summaries to the AI provider.</span>
       </label>
 
       <div className="assistant-sources">
@@ -425,14 +449,18 @@ function AssistantPanel({
         />
         <button
           aria-label="Send question"
-          disabled={!question.trim() || loading || !aiEnabled}
+          disabled={
+            !question.trim() ||
+            loading ||
+            (!aiEnabled && !isDuplicateAuditQuestion(question))
+          }
           type="submit"
         >
           <Send size={17} />
         </button>
       </form>
       <p className="chat-privacy">
-        AI is optional and read-only. History stays in this browser; the provider receives only anonymized totals and category aggregates—not names, notes, account numbers, or raw records.
+        Exact duplicate checks run locally. AI is optional and read-only; the provider receives anonymized totals, category trends, anonymous-account balances and derived audit summaries—not names, descriptions, notes, account numbers, IDs or raw records.
       </p>
     </div>
   );
